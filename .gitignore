@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+venv/
+env/
+.env
+.venv/
+
+# Firebase credentials — NEVER commit this
+firebase-key.json
+
+# IDE / OS
+.vscode/
+.idea/
+*.DS_Store
+Thumbs.db
+
+# Qodo
+.qodo/
+
+# Logs
+*.log

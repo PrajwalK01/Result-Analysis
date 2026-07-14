@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin · Subject Credits</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/user.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_subjects.css') }}">
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="topbar__brand">
+      <h1>Subject Credits</h1>
+      <span class="topbar__sub">Admin</span>
+    </div>
+    <div class="topbar__user">
+      <span class="topbar__username">{{ user_name }}</span>
+      <a href="{{ url_for('login.user_page') }}" class="btn btn--ghost">Back to Dashboard</a>
+      <a href="{{ url_for('login.logout') }}" class="btn btn--ghost">Logout</a>
+    </div>
+  </header>
+
+  <main class="content">
+    <section class="panel">
+
+      <h2 class="section-title">Add / Update Subject</h2>
+
+      <div class="field-grid field-grid--3">
+        <div class="field">
+          <label for="subjCode">Subject Code</label>
+          <input id="subjCode" placeholder="e.g. BIS601">
+        </div>
+        <div class="field">
+          <label for="subjName">Subject Name</label>
+          <input id="subjName" placeholder="e.g. Full Stack Development">
+        </div>
+        <div class="field">
+          <label for="subjCredit">Credit</label>
+          <input id="subjCredit" type="number" min="1" max="10" placeholder="e.g. 4">
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="saveSubjectBtn" class="btn btn--primary">Save Subject</button>
+      </div>
+
+      <div id="adminMsg" class="message message--hidden"></div>
+
+      <h2 class="section-title">All Subjects</h2>
+
+      <div class="field admin-search">
+        <label for="subjectSearch">Search</label>
+        <input id="subjectSearch" placeholder="Filter by code or name...">
+      </div>
+
+      <div class="table-wrap">
+        <table class="data-table" id="subjectsTable">
+          <thead>
+            <tr><th>Code</th><th>Name</th><th>Credit</th><th>Action</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+    </section>
+  </main>
+
+  <script src="{{ url_for('static', filename='js/admin_subjects.js') }}"></script>
+</body>
+</html>

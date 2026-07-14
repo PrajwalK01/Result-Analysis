@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Result Analysis</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/user.css') }}">
+</head>
+<body>
+
+  <!-- ===== TOPBAR ===== -->
+  <header class="topbar">
+    <div class="topbar__brand">
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+        <rect width="28" height="28" rx="8" fill="#7c5cff"/>
+        <path d="M7 20L11 14L15 17L19 10L21 13" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div>
+        <div class="topbar__title">Result Analysis</div>
+        <div class="topbar__sub">Academic Portal</div>
+      </div>
+    </div>
+    <div class="topbar__user">
+      <div class="avatar">{{ user_name[0] | upper if user_name else 'U' }}</div>
+      <span class="topbar__username">{{ user_name }}</span>
+      {% if is_admin %}
+      <a href="/admin/subjects" class="btn btn--ghost">Admin</a>
+      {% endif %}
+      <a href="{{ url_for('login.logout') }}" class="btn btn--ghost">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+          <polyline points="16 17 21 12 16 7"/>
+          <line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+        Logout
+      </a>
+    </div>
+  </header>
+
+  <!-- ===== TABS ===== -->
+  <nav class="tabs">
+    <button class="tab tab--active" data-tab="upload">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      Upload Result
+    </button>
+    <button class="tab" data-tab="dashboard">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+        <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+      </svg>
+      Dashboard
+    </button>
+  </nav>
+
+  <main class="content">
+
+    <!-- ==================== UPLOAD PANEL ==================== -->
+    <section id="uploadPanel" class="panel">
+
+      <!-- Get result directly from VTU (student solves CAPTCHA, bookmarklet imports it) -->
+      <div class="vtu-fetch-box">
+        <div class="vtu-fetch-box__text">
+          <p class="vtu-fetch-box__title">Have a USN instead of a file?</p>
+          <p class="vtu-fetch-box__sub">
+            Drag <strong id="bookmarkletLink" class="bookmarklet-link">📌 Send to Result Analysis</strong>
+            to your bookmarks bar once. Then: open VTU Results below, enter the USN, solve the CAPTCHA
+            yourself, and click that bookmark on the loaded result page to import it here automatically.
+          </p>
+        </div>
+        <a href="https://results.vtu.ac.in/" target="_blank" rel="noopener" class="btn btn--secondary">
+          Open VTU Results ↗
+        </a>
+      </div>
+
+      <!-- File Upload Zone (Images + PDFs) -->
+      <div class="upload-zone" id="uploadZone">
+        <div class="upload-zone__icon">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="12" y1="18" x2="12" y2="12"/>
+            <line x1="9" y1="15" x2="15" y2="15"/>
+          </svg>
+        </div>
+        <p class="upload-zone__title">Drop marksheet files here</p>
+        <p class="upload-zone__sub">or <label for="fileInput" class="upload-zone__browse">browse to upload</label></p>
+        <p class="upload-zone__hint">Supports JPG, PNG, WEBP, PDF &nbsp;·&nbsp; Multiple files allowed</p>
+        <input type="file" id="fileInput" accept="image/*,.pdf,application/pdf" multiple hidden>
+      </div>
+
+      <!-- File Grid (images as thumbnails, PDFs as cards) -->
+      <div id="fileGrid" class="img-grid hidden"></div>
+
+      <!-- ===== STUDENT DETAILS (view mode) ===== -->
+      <div class="section-divider"><span>Student Details</span></div>
+
+      <!-- VIEW mode: static display -->
+      <div id="detailsView" class="details-view">
+        <div class="detail-row">
+          <div class="detail-item">
+            <span class="detail-label">Branch</span>
+            <span class="detail-value" id="view-branch">—</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">Semester</span>
+            <span class="detail-value" id="view-semester">—</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">Academic Year</span>
+            <span class="detail-value" id="view-academicYear">—</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">USN</span>
+            <span class="detail-value" id="view-usn">—</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">Student Name</span>
+            <span class="detail-value" id="view-studentName">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- EDIT mode: inputs (hidden by default) -->
+      <div id="detailsEdit" class="hidden">
+        <div class="field-grid field-grid--3">
+          <div class="field">
+            <label for="branch">Branch</label>
+            <input list="branchList" id="branch" placeholder="e.g. ECE">
+            <datalist id="branchList"></datalist>
+          </div>
+          <div class="field">
+            <label for="semester">Semester</label>
+            <input list="semList" id="semester" placeholder="e.g. SEM 1">
+            <datalist id="semList"></datalist>
+          </div>
+          <div class="field">
+            <label for="academicYear">Academic Year</label>
+            <input list="yearList" id="academicYear" placeholder="e.g. 2025-26">
+            <datalist id="yearList"></datalist>
+          </div>
+        </div>
+        <div class="field-grid field-grid--2">
+          <div class="field">
+            <label for="usn">University Seat Number (USN)</label>
+            <input id="usn" placeholder="e.g. 1JV25EC001">
+          </div>
+          <div class="field">
+            <label for="studentName">Student Name</label>
+            <input id="studentName" placeholder="e.g. B Chandana">
+          </div>
+        </div>
+      </div>
+
+      <!-- Edit / Done toggle button -->
+      <div class="edit-bar">
+        <button id="editToggleBtn" class="btn btn--secondary btn--sm">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+            <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg>
+          Edit Details
+        </button>
+      </div>
+
+      <!-- ===== SUBJECT MARKS ===== -->
+      <div class="section-divider"><span>Subject Marks</span></div>
+
+      <div class="table-wrap">
+        <table class="data-table" id="subjectInputTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Subject Code</th>
+              <th>Subject Name</th>
+              <th>Credit</th>
+              <th>Internal <span class="muted">(max 50)</span></th>
+              <th>External <span class="muted">(max 50)</span></th>
+              <th>Total</th>
+              <th>Grade / Letter</th>
+              <th>Result</th>
+              <th class="col-action"></th>
+            </tr>
+          </thead>
+          <tbody id="subjectRows"></tbody>
+          <tfoot id="subjectFoot">
+            <tr>
+              <td colspan="10">
+                <button id="addSubjectBtn" class="btn btn--secondary btn--sm hidden">+ Add Subject</button>
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <!-- Summary -->
+      <div class="section-divider"><span>Summary</span></div>
+
+      <div class="stat-cards">
+        <div class="stat-card">
+          <div class="stat-card__value" id="sumTotal">0</div>
+          <div class="stat-card__label">Total Marks</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card__value" id="sumPct">0%</div>
+          <div class="stat-card__label">Percentage</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card__value" id="sumSgpa">0.00</div>
+          <div class="stat-card__label">SGPA</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card__value" id="sumClass">—</div>
+          <div class="stat-card__label">Class Awarded</div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="saveResultBtn" class="btn btn--primary">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+            <polyline points="17 21 17 13 7 13 7 21"/>
+            <polyline points="7 3 7 8 15 8"/>
+          </svg>
+          Save Result
+        </button>
+        <button id="resetFormBtn" class="btn btn--ghost">Reset</button>
+      </div>
+
+      <div id="uploadMsg" class="message hidden"></div>
+    </section>
+
+    <!-- ==================== DASHBOARD PANEL ==================== -->
+    <section id="dashboardPanel" class="panel hidden">
+
+      <div class="field-grid field-grid--3">
+        <div class="field">
+          <label for="filterBranch">Branch</label>
+          <select id="filterBranch"><option value="">Select Branch</option></select>
+        </div>
+        <div class="field">
+          <label for="filterSemester">Semester</label>
+          <select id="filterSemester"><option value="">Select Semester</option></select>
+        </div>
+        <div class="field">
+          <label for="filterYear">Academic Year</label>
+          <select id="filterYear"><option value="">Select Year</option></select>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="loadAnalysisBtn" class="btn btn--primary">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+          </svg>
+          Load Analysis
+        </button>
+        <button id="downloadCSVBtn" class="btn btn--secondary hidden">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Download CSV
+        </button>
+      </div>
+
+      <div id="dashResults" class="hidden">
+
+        <!-- ══════ Summary Cards ══════ -->
+        <div class="stat-cards" style="margin-top:24px;">
+          <div class="stat-card">
+            <div class="stat-card__value" id="statTotalStudents">0</div>
+            <div class="stat-card__label">Total Students</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card__value" id="statOverallPct">0%</div>
+            <div class="stat-card__label">Overall Pass %</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card__value stat-card__value--success" id="statPassCount">0</div>
+            <div class="stat-card__label">Passed</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card__value stat-card__value--danger" id="statFailCount">0</div>
+            <div class="stat-card__label">NC / Failed</div>
+          </div>
+        </div>
+
+        <!-- ══════ Class Distribution ══════ -->
+        <div class="section-divider" style="margin-top:28px;"><span>Class Distribution</span></div>
+        <div class="class-distribution">
+          <div class="class-item">
+            <span class="class-label">FCD (First Class with Distinction)</span>
+            <span class="class-value" id="classFCD">0</span>
+          </div>
+          <div class="class-item">
+            <span class="class-label">FC (First Class)</span>
+            <span class="class-value" id="classFC">0</span>
+          </div>
+          <div class="class-item">
+            <span class="class-label">SC (Second Class)</span>
+            <span class="class-value" id="classSC">0</span>
+          </div>
+          <div class="class-item">
+            <span class="class-label">NC (No Class / Failed)</span>
+            <span class="class-value" id="classNC">0</span>
+          </div>
+        </div>
+
+        <!-- ══════ Toppers ══════ -->
+        <div class="section-divider" style="margin-top:28px;"><span>Toppers</span></div>
+        <div class="table-wrap">
+          <table class="data-table" id="topperTable">
+            <thead>
+              <tr>
+                <th>Rank</th><th>USN</th><th>Student Name</th>
+                <th>Total Marks</th><th>Total GP</th>
+                <th>SGPA</th><th>Percentage</th><th>Class</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <!-- ══════ All Students (Full Result Sheet) ══════ -->
+        <div class="section-divider" style="margin-top:28px;"><span>All Students</span></div>
+        <div class="table-wrap">
+          <table class="data-table" id="allStudentsTable">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>USN</th>
+                <th>Name</th>
+                <th>Total</th>
+                <th>GP</th>
+                <th>SGPA</th>
+                <th>%</th>
+                <th>Class</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <!-- ══════ Subject-wise Analysis ══════ -->
+        <div class="section-divider" style="margin-top:28px;"><span>Subject-wise Analysis</span></div>
+        <div class="table-wrap">
+          <table class="data-table" id="subjectTable">
+            <thead>
+              <tr>
+                <th>Subject Code</th><th>Subject Name</th>
+                <th>Students</th>
+                <th>Avg Int</th><th>Avg Ext</th><th>Avg Total</th>
+                <th>Pass</th><th>Fail</th><th>Pass %</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <script src="{{ url_for('static', filename='js/user.js') }}"></script>
+</body>
+</html>
