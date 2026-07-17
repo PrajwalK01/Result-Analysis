@@ -506,7 +506,8 @@ def save_result():
         total_credits       = sum(s['credit']       for s in enriched)
         total_credit_points = sum(s['creditPoints'] for s in enriched)
         sgpa       = round(total_credit_points / total_credits, 2) if total_credits > 0 else 0.0
-        percentage = round((sum_total / max_marks) * 100, 2)       if max_marks  > 0 else 0.0
+        # VTU formula: Percentage = (SGPA - 0.75) × 10
+        percentage = round(max(0.0, (sgpa - 0.75) * 10), 2) if sgpa > 0 else 0.0
         has_fail   = any(s['result'] == 'F' for s in enriched)
         cls        = calc_class_awarded(has_fail, percentage)
 

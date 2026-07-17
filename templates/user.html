@@ -328,21 +328,10 @@
 
         <!-- ══════ All Students (Full Result Sheet) ══════ -->
         <div class="section-divider" style="margin-top:28px;"><span>All Students</span></div>
-        <div class="table-wrap">
-          <table class="data-table" id="allStudentsTable">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>USN</th>
-                <th>Name</th>
-                <th>Total</th>
-                <th>GP</th>
-                <th>SGPA</th>
-                <th>%</th>
-                <th>Class</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
+        <div id="allStudentsTableWrap" class="detail-result-table-wrap">
+          <table class="detail-result-table" id="allStudentsTable">
+            <thead id="allStudentsHead"></thead>
+            <tbody id="allStudentsBody"></tbody>
           </table>
         </div>
 
@@ -353,8 +342,6 @@
             <thead>
               <tr>
                 <th>Subject Code</th><th>Subject Name</th>
-                <th>Students</th>
-                <th>Avg Int</th><th>Avg Ext</th><th>Avg Total</th>
                 <th>Pass</th><th>Fail</th><th>Pass %</th>
               </tr>
             </thead>

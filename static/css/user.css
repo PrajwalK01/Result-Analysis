@@ -428,6 +428,20 @@ body {
   background: rgba(124,92,255,0.04);
 }
 
+/* Fix dropdown option text colour — browsers render the native picker
+   with a white/light background so the text must be dark */
+.field select option {
+  background: #1e222d;
+  color: #e8eaf0;
+}
+
+/* Chromium-based browsers also need this on the select element itself
+   when the dropdown list is open */
+select option {
+  background-color: #1e222d;
+  color: #e8eaf0;
+}
+
 /* ===== SUBJECT INPUT TABLE ===== */
 .table-wrap {
   overflow-x: auto;
@@ -691,6 +705,116 @@ tr.row--needs-review .td-input {
   cursor: help;
   font-size: 12px;
 }
+
+/* Dashboard filter selects — frozen state */
+.field select:disabled {
+  cursor: not-allowed;
+}
+
+/* locked credit (set by admin) */
+.td-input[readonly] {
+  opacity: 0.65;
+  cursor: not-allowed;
+  border-style: dashed;
+  background: rgba(124,92,255,0.05);
+}
+
+/* ===== DETAILED STUDENT TABLE (All Students full result sheet) ===== */
+.detail-result-table-wrap {
+  overflow-x: auto;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-height: 600px;
+}
+
+.detail-result-table {
+  border-collapse: collapse;
+  font-size: 12px;
+  table-layout: fixed;
+  /* width is auto so it stretches as wide as needed */
+}
+
+.detail-result-table th,
+.detail-result-table td {
+  padding: 7px 8px;
+  text-align: center;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+}
+
+/* ── Fixed column widths matching JS constants ── */
+.detail-result-table .col-sl   { width: 48px;  min-width: 48px; }
+.detail-result-table .col-usn  { width: 120px; min-width: 120px; font-family: monospace; font-size: 11px; }
+.detail-result-table .col-name { width: 160px; min-width: 160px; text-align: left !important; }
+
+/* ── First header row (group labels) — sticky to top ── */
+.detail-result-table thead tr:first-child th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #12151e;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ── Second header row (In/Ex/Tot/Re/GP) — sticky just below row 1 ── */
+/* 36px matches the rendered height of row 1 at font-size:10px + padding:7px×2 */
+.detail-result-table thead tr:nth-child(2) th {
+  position: sticky;
+  top: 36px;
+  z-index: 3;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ── Sticky left columns ── */
+.detail-result-table td.sticky-left {
+  position: sticky;
+  z-index: 2;
+  background: var(--panel);
+}
+
+/* Header sticky-left cells need even higher z so they sit above both axes */
+.detail-result-table thead tr:first-child th.sticky-left {
+  z-index: 6;
+  background: #12151e;
+}
+.detail-result-table thead tr:nth-child(2) th.sticky-left {
+  z-index: 6;
+  background: var(--panel-2);
+}
+
+/* Hover */
+.detail-result-table tbody tr:hover td             { background: rgba(124,92,255,0.06); }
+.detail-result-table tbody tr:hover td.sticky-left { background: rgba(124,92,255,0.12); }
+
+/* ── Subject group header colours (cycles every 8) ── */
+.subj-hdr-0 { background: rgba(124, 92,255,0.18) !important; color: #a98aff !important; }
+.subj-hdr-1 { background: rgba(  0,212,168,0.15) !important; color: #00d4a8 !important; }
+.subj-hdr-2 { background: rgba(255,184, 77,0.15) !important; color: #ffb84d !important; }
+.subj-hdr-3 { background: rgba(255, 92,122,0.15) !important; color: #ff5c7a !important; }
+.subj-hdr-4 { background: rgba( 77,166,255,0.15) !important; color: #4da6ff !important; }
+.subj-hdr-5 { background: rgba(255,120, 20,0.15) !important; color: #ff7814 !important; }
+.subj-hdr-6 { background: rgba(170, 77,255,0.15) !important; color: #aa4dff !important; }
+.subj-hdr-7 { background: rgba( 50,200,100,0.15) !important; color: #32c864 !important; }
+
+/* ── Tail (summary) headers ── */
+.tail-hdr { background: rgba(30,34,48,0.95) !important; color: #c0c6d9 !important; }
+
+/* ── Result cell text ── */
+.res-pass { color: var(--accent-2); font-weight: 700; }
+.res-fail { color: var(--danger);   font-weight: 700; }
 
 /* ===== RESPONSIVE ===== */
 @media (max-width: 900px) {

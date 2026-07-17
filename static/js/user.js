@@ -45,12 +45,27 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('loadAnalysisBtn').addEventListener('click', loadAnalysis);
   document.getElementById('downloadCSVBtn').addEventListener('click', downloadCSV);
 
+  // Auto-detect branch from USN as user types
+  document.getElementById('usn').addEventListener('input', function() {
+    const branch = detectBranchFromUSN(this.value);
+    if (branch) {
+      const branchInput = document.getElementById('branch');
+      if (!branchInput.value.trim()) {
+        branchInput.value = branch;
+        // sync view
+        const viewBranch = document.getElementById('view-branch');
+        if (viewBranch) { viewBranch.textContent = branch; viewBranch.classList.remove('is-empty'); }
+      }
+    }
+  });
+
   // Default: view mode (edit off). User must click Edit Details to enter edit mode.
   // isEditMode is already false, so addSubjectRow will add the row in view mode.
   addSubjectRow();
 
   loadImportedFromBookmarklet();
   setupBookmarklet();
+  initDashboardCascade();
 });
 
 /* ==================== BOOKMARKLET SETUP ==================== */
@@ -150,6 +165,15 @@ function loadImportedFromBookmarklet() {
   if (d.studentName) document.getElementById('studentName').value = d.studentName;
   if (d.semester)    document.getElementById('semester').value    = d.semester;
 
+  // Auto-detect branch from USN for bookmarklet imports
+  if (d.usn) {
+    const detectedBranch = detectBranchFromUSN(d.usn);
+    if (detectedBranch) {
+      const branchInput = document.getElementById('branch');
+      if (!branchInput.value.trim()) branchInput.value = detectedBranch;
+    }
+  }
+
   ['usn', 'studentName', 'semester'].forEach(id => {
     const val = document.getElementById(id).value.trim();
     const el  = document.getElementById(`view-${id}`);
@@ -162,7 +186,8 @@ function loadImportedFromBookmarklet() {
 
     d.subjects.forEach(s => {
       addSubjectRow({
-        code: s.code, name: s.name, credit: '',
+        code: s.code, name: s.name, credit: s.credit || '',
+        creditLocked: s.credit > 0,
         internal: s.internal, external: s.external,
       });
     });
@@ -181,7 +206,22 @@ function loadImportedFromBookmarklet() {
   }
 }
 
-/* ==================== TABS ==================== */
+/* ==================== BRANCH AUTO-DETECT FROM USN ==================== */
+function detectBranchFromUSN(usn) {
+  // VTU USN format: 1JV24IS022  — chars[5:7] = branch code
+  usn = (usn || '').trim().toUpperCase();
+  if (usn.length < 7) return '';
+  const code = usn.slice(5, 7);
+  // Match the DEFAULT_BRANCH_MAP from constants.py + common extras
+  const branchMap = {
+    'EC': 'ECE',  'IS': 'ISE',  'CS': 'CSE',
+    'ME': 'ME',   'CV': 'CIVIL','EE': 'EEE',
+    'ET': 'ETE',  'IM': 'IME',  'BT': 'BT',
+    'CH': 'CHE',  'AI': 'AI&ML','AD': 'AI&DS',
+    'CD': 'CSD',  'CY': 'CSE(CY)',
+  };
+  return branchMap[code] || code;
+}
 function initTabs() {
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -277,6 +317,11 @@ async function parsePDF(file) {
     if (d.studentName)  document.getElementById('studentName').value  = d.studentName;
     if (d.semester)     document.getElementById('semester').value     = d.semester;
     if (d.branch)       document.getElementById('branch').value       = d.branch;
+    // If server didn't return branch, derive it from USN
+    if (!d.branch && d.usn) {
+      const detectedBranch = detectBranchFromUSN(d.usn);
+      if (detectedBranch) document.getElementById('branch').value = detectedBranch;
+    }
     if (d.academicYear) document.getElementById('academicYear').value = d.academicYear;
 
     // Sync view displays immediately
@@ -296,6 +341,7 @@ async function parsePDF(file) {
           code:        s.code,
           name:        s.name,
           credit:      s.credit || '',   // auto-filled if admin has defined this subject
+          creditLocked: s.credit > 0,    // lock it if admin already set it
           internal:    s.internal,
           external:    s.external,
           needsReview: s.needsReview,
@@ -515,7 +561,7 @@ function addSubjectRow(prefill = {}) {
 
     <!-- Credit column -->
     <td>
-      <input class="td-input td-input--num cell-input" type="number" id="credit-${id}" placeholder="4" min="0" max="10" value="${prefill.credit || ''}">
+      <input class="td-input td-input--num cell-input" type="number" id="credit-${id}" placeholder="4" min="0" max="10" value="${prefill.credit || ''}" ${prefill.creditLocked ? 'readonly title="Credit set by Admin — cannot be changed"' : ''}>
       <span class="cell-text hidden" id="txt-credit-${id}">—</span>
     </td>
 
@@ -635,11 +681,11 @@ function collectSubjects() {
 function recalcSummary() {
   const subjects = collectSubjects();
   const sumTotal  = subjects.reduce((a, s) => a + s.total, 0);
-  const maxMarks  = subjects.length * 100;
   const totCred   = subjects.reduce((a, s) => a + s.credit, 0);
   const totCP     = subjects.reduce((a, s) => a + s.creditPoints, 0);
   const sgpa      = totCred > 0 ? totCP / totCred : 0;
-  const pct       = maxMarks > 0 ? (sumTotal / maxMarks) * 100 : 0;
+  // VTU formula: Percentage = (SGPA - 0.75) × 10
+  const pct       = sgpa > 0 ? Math.max(0, (sgpa - 0.75) * 10) : 0;
   const hasFail   = subjects.some(s => s.result === 'F');
   const cls       = subjects.length > 0 ? getClassAwarded(hasFail, pct) : '—';
 
@@ -742,6 +788,9 @@ async function loadLookups() {
     fillSelect('filterBranch',   data.branches);
     fillSelect('filterSemester', data.semesters);
     fillSelect('filterYear',     data.academicYears);
+
+    // Re-apply cascade state after selects are populated
+    if (typeof initDashboardCascade === 'function') initDashboardCascade();
   } catch (e) {
     console.warn('Lookups fetch failed:', e);
   }
@@ -760,15 +809,57 @@ function fillSelect(id, values) {
   el.innerHTML = def + (values || []).map(v => `<option value="${v}">${v}</option>`).join('');
 }
 
+/* ==================== DASHBOARD FILTER CASCADE ==================== */
+function initDashboardCascade() {
+  const branchSel   = document.getElementById('filterBranch');
+  const semesterSel = document.getElementById('filterSemester');
+  const yearSel     = document.getElementById('filterYear');
+  const loadBtn     = document.getElementById('loadAnalysisBtn');
+
+  function updateState() {
+    const hasBranch   = !!branchSel.value;
+    const hasSemester = !!semesterSel.value;
+    const hasYear     = !!yearSel.value;
+
+    semesterSel.disabled = !hasBranch;
+    yearSel.disabled     = !hasBranch || !hasSemester;
+    loadBtn.disabled     = !hasBranch || !hasSemester || !hasYear;
+
+    // Visual hint
+    semesterSel.style.opacity = hasBranch   ? '1' : '0.45';
+    yearSel.style.opacity     = (hasBranch && hasSemester) ? '1' : '0.45';
+    loadBtn.style.opacity     = (hasBranch && hasSemester && hasYear) ? '1' : '0.55';
+  }
+
+  branchSel.addEventListener('change', () => {
+    // Reset downstream when branch changes
+    semesterSel.value = '';
+    yearSel.value     = '';
+    document.getElementById('dashResults').classList.add('hidden');
+    document.getElementById('downloadCSVBtn').classList.add('hidden');
+    updateState();
+  });
+
+  semesterSel.addEventListener('change', () => {
+    yearSel.value = '';
+    document.getElementById('dashResults').classList.add('hidden');
+    document.getElementById('downloadCSVBtn').classList.add('hidden');
+    updateState();
+  });
+
+  yearSel.addEventListener('change', updateState);
+
+  // Set initial state
+  updateState();
+}
+
 /* ==================== ANALYSIS ==================== */
 async function loadAnalysis() {
   const branch       = document.getElementById('filterBranch').value;
   const semester     = document.getElementById('filterSemester').value;
   const academicYear = document.getElementById('filterYear').value;
 
-  if (!branch || !semester || !academicYear) {
-    alert('Please select Branch, Semester, and Academic Year.'); return;
-  }
+  if (!branch || !semester || !academicYear) return; // cascade prevents this, safety guard
 
   const btn = document.getElementById('loadAnalysisBtn');
   btn.disabled    = true;
@@ -851,25 +942,160 @@ function renderToppers(students) {
 
 function renderAllStudents(students) {
   const sorted = [...students].sort((a, b) => (a.usn || '').localeCompare(b.usn || ''));
-  const tbody  = document.querySelector('#allStudentsTable tbody');
+
+  // Collect all unique subjects (ordered by their first appearance across all students)
+  const subjectOrder = [];
+  const subjectNames = {};
+  sorted.forEach(s => {
+    (s.subjects || []).forEach(sub => {
+      if (!subjectNames[sub.code]) {
+        subjectOrder.push(sub.code);
+        subjectNames[sub.code] = sub.name || sub.code;
+      }
+    });
+  });
+
+  // Fixed left column widths (px) — must match CSS .col-sl, .col-usn, .col-name
+  const COL_SL   = 48;
+  const COL_USN  = 120;
+  const COL_NAME = 160;
+  const LEFT = {
+    sl:   0,
+    usn:  COL_SL,
+    name: COL_SL + COL_USN,
+  };
+
+  // ── Build thead ──────────────────────────────────────────────────────────
+  const thead = document.getElementById('allStudentsHead');
+  thead.innerHTML = '';
+
+  // Row 1: group headers
+  const row1 = document.createElement('tr');
+
+  // Fixed left cols — rowSpan=2 so they span both header rows
+  [
+    { label: 'Sl No',        cls: 'sticky-left col-sl',   left: LEFT.sl   },
+    { label: 'USN',          cls: 'sticky-left col-usn',  left: LEFT.usn  },
+    { label: 'Student Name', cls: 'sticky-left col-name', left: LEFT.name },
+  ].forEach(({ label, cls, left }) => {
+    const th = document.createElement('th');
+    th.rowSpan = 2;
+    th.textContent = label;
+    th.className = cls;
+    th.style.left = left + 'px';
+    th.style.minWidth = (label === 'Sl No' ? COL_SL : label === 'USN' ? COL_USN : COL_NAME) + 'px';
+    row1.appendChild(th);
+  });
+
+  // Subject group headers — each spans 5 sub-cols
+  subjectOrder.forEach((code, si) => {
+    const th = document.createElement('th');
+    th.colSpan = 5;
+    th.textContent = `Subject ${si + 1} — ${subjectNames[code]}`;
+    th.className = `subj-hdr-${si % 8}`;
+    row1.appendChild(th);
+  });
+
+  // Tail summary headers — rowSpan=2
+  ['Total Marks', 'Total GP', 'SGPA', 'Percentage %', 'Class Awarded'].forEach(label => {
+    const th = document.createElement('th');
+    th.rowSpan = 2;
+    th.textContent = label;
+    th.className = 'tail-hdr';
+    row1.appendChild(th);
+  });
+  thead.appendChild(row1);
+
+  // Row 2: sub-column headers (In / Ex / Tot / Re / GP) for each subject
+  const row2 = document.createElement('tr');
+  subjectOrder.forEach((_, si) => {
+    ['In', 'Ex', 'Tot', 'Re', 'GP'].forEach(label => {
+      const th = document.createElement('th');
+      th.textContent = label;
+      th.className = `subj-hdr-${si % 8}`;
+      row2.appendChild(th);
+    });
+  });
+  thead.appendChild(row2);
+
+  // ── Build tbody ──────────────────────────────────────────────────────────
+  const tbody = document.getElementById('allStudentsBody');
   tbody.innerHTML = '';
 
   sorted.forEach((s, i) => {
-    const isNC   = s.classAwarded === 'NC';
-    const badge  = `<span class="badge ${isNC ? 'badge--fail' : 'badge--pass'}">${s.classAwarded}</span>`;
-    const tr     = document.createElement('tr');
-    tr.innerHTML = `
-      <td style="color:var(--muted)">${i + 1}</td>
-      <td style="font-family:monospace;font-size:12px">${s.usn}</td>
-      <td style="text-align:left;font-weight:500">${s.studentName}</td>
-      <td>${s.sumTotal}</td>
-      <td>${s.totalCreditPoints}</td>
-      <td style="font-weight:700;color:var(--accent-2)">${s.sgpa}</td>
-      <td>${s.percentage}%</td>
-      <td>${badge}</td>
-    `;
+    const subMap = {};
+    (s.subjects || []).forEach(sub => { subMap[sub.code] = sub; });
+
+    const tr = document.createElement('tr');
+
+    // Fixed left cells
+    [
+      { text: i + 1,          cls: 'sticky-left col-sl',   left: LEFT.sl,   extraStyle: 'color:var(--muted);font-size:11px' },
+      { text: s.usn,          cls: 'sticky-left col-usn',  left: LEFT.usn,  extraStyle: 'font-family:monospace;font-size:11px' },
+      { text: s.studentName,  cls: 'sticky-left col-name', left: LEFT.name, extraStyle: 'text-align:left;font-weight:500' },
+    ].forEach(({ text, cls, left, extraStyle }) => {
+      const td = document.createElement('td');
+      td.textContent = text;
+      td.className = cls;
+      td.style.left = left + 'px';
+      if (extraStyle) td.setAttribute('style', td.getAttribute('style') || '' + ';' + extraStyle);
+      td.style.left = left + 'px';   // re-set after setAttribute
+      tr.appendChild(td);
+    });
+
+    // Subject data cells
+    subjectOrder.forEach(code => {
+      const sub = subMap[code];
+      if (sub) {
+        const isPass = sub.result === 'P';
+        const gp     = sub.grade !== undefined ? sub.grade : (sub.gradePoint || 0);
+        [
+          { val: sub.internal,  style: '' },
+          { val: sub.external,  style: '' },
+          { val: sub.total,     style: 'font-weight:600' },
+          { val: sub.result,    isResult: true, pass: isPass },
+          { val: gp,            style: isPass ? 'color:var(--accent-2)' : 'color:var(--danger)' },
+        ].forEach(col => {
+          const td = document.createElement('td');
+          if (col.isResult) {
+            td.innerHTML = `<span class="${col.pass ? 'res-pass' : 'res-fail'}">${col.val}</span>`;
+          } else {
+            td.textContent = col.val ?? '—';
+            if (col.style) td.setAttribute('style', col.style);
+          }
+          tr.appendChild(td);
+        });
+      } else {
+        for (let k = 0; k < 5; k++) {
+          const td = document.createElement('td');
+          td.textContent = '—';
+          td.style.color = 'var(--muted)';
+          tr.appendChild(td);
+        }
+      }
+    });
+
+    // Tail summary cells
+    const isNC = s.classAwarded === 'NC';
+    [
+      { val: s.sumTotal,          style: 'font-weight:600' },
+      { val: s.totalCreditPoints, style: '' },
+      { val: s.sgpa,              style: 'font-weight:700;color:var(--accent-2)' },
+      { val: `${s.percentage}%`,  style: '' },
+      { val: s.classAwarded,      style: isNC ? 'color:var(--danger);font-weight:700' : 'color:var(--accent-2);font-weight:700' },
+    ].forEach(col => {
+      const td = document.createElement('td');
+      td.textContent = col.val;
+      if (col.style) td.setAttribute('style', col.style);
+      tr.appendChild(td);
+    });
+
     tbody.appendChild(tr);
   });
+
+  window._lastAnalysisStudents     = sorted;
+  window._lastAnalysisSubjectOrder = subjectOrder;
+  window._lastAnalysisSubjectNames = subjectNames;
 }
 
 /* ==================== CSV DOWNLOAD ==================== */
@@ -878,22 +1104,46 @@ function downloadCSV() {
   const semester     = document.getElementById('filterSemester').value;
   const academicYear = document.getElementById('filterYear').value;
 
-  const rows = document.querySelectorAll('#allStudentsTable tbody tr');
-  if (!rows.length) return;
+  const students    = window._lastAnalysisStudents || [];
+  const subOrder    = window._lastAnalysisSubjectOrder || [];
+  const subNames    = window._lastAnalysisSubjectNames || {};
 
-  const headers = ['#', 'USN', 'Student Name', 'Total Marks', 'Total GP', 'SGPA', 'Percentage', 'Class'];
-  const lines   = [
-    `Result Analysis – Branch: ${branch} | Semester: ${semester} | Year: ${academicYear}`,
-    headers.join(',')
+  if (!students.length) return;
+
+  // Build header rows
+  const row1 = ['Sl No', 'USN', 'Student Name'];
+  const row2 = ['', '', ''];
+  subOrder.forEach((code, si) => {
+    const label = `Subject ${si + 1} (${subNames[code]})`;
+    row1.push(label, '', '', '', '');
+    row2.push('In', 'Ex', 'Tot', 'Re', 'GP');
+  });
+  row1.push('Total Marks', 'Total GP', 'SGPA', 'Percentage %', 'Class Awarded');
+  row2.push('', '', '', '', '');
+
+  const lines = [
+    `"Result Analysis – Branch: ${branch} | Semester: ${semester} | Year: ${academicYear}"`,
+    row1.map(v => `"${v}"`).join(','),
+    row2.map(v => `"${v}"`).join(','),
   ];
 
-  rows.forEach(tr => {
-    const cells = Array.from(tr.querySelectorAll('td')).map((td, i) => {
-      // strip html tags from badge cells
-      const val = td.innerText.replace(/,/g, ' ').trim();
-      return i === 2 ? `"${val}"` : val;  // quote name column
+  students.forEach((s, i) => {
+    const subMap = {};
+    (s.subjects || []).forEach(sub => { subMap[sub.code] = sub; });
+
+    const row = [i + 1, s.usn, s.studentName];
+    subOrder.forEach(code => {
+      const sub = subMap[code];
+      if (sub) {
+        const gp = sub.grade !== undefined ? sub.grade : sub.gradePoint || 0;
+        row.push(sub.internal, sub.external, sub.total, sub.result, gp);
+      } else {
+        row.push('—', '—', '—', '—', '—');
+      }
     });
-    lines.push(cells.join(','));
+    row.push(s.sumTotal, s.totalCreditPoints, s.sgpa, `${s.percentage}%`, s.classAwarded);
+
+    lines.push(row.map((v, ci) => ci === 2 ? `"${v}"` : v).join(','));
   });
 
   const csv  = lines.join('\n');
@@ -911,11 +1161,10 @@ function renderSubjectAnalysis(students) {
   students.forEach(s => {
     (s.subjects || []).forEach(sub => {
       if (!map[sub.code]) {
-        map[sub.code] = { name: sub.name, intSum: 0, extSum: 0, totSum: 0, count: 0, pass: 0 };
+        map[sub.code] = { name: sub.name, count: 0, pass: 0 };
       }
       const m = map[sub.code];
-      m.intSum += sub.internal; m.extSum += sub.external;
-      m.totSum += sub.total;    m.count  += 1;
+      m.count += 1;
       if (sub.result === 'P') m.pass += 1;
     });
   });
@@ -923,17 +1172,14 @@ function renderSubjectAnalysis(students) {
   const tbody = document.querySelector('#subjectTable tbody');
   tbody.innerHTML = '';
   Object.entries(map).forEach(([code, m]) => {
+    const fail    = m.count - m.pass;
     const passPct = ((m.pass / m.count) * 100).toFixed(1);
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${code}</td>
+      <td style="font-family:monospace;font-size:12px">${code}</td>
       <td style="text-align:left">${m.name}</td>
-      <td>${m.count}</td>
-      <td>${(m.intSum / m.count).toFixed(1)}</td>
-      <td>${(m.extSum / m.count).toFixed(1)}</td>
-      <td>${(m.totSum / m.count).toFixed(1)}</td>
       <td style="color:var(--accent-2);font-weight:600">${m.pass}</td>
-      <td style="color:var(--danger);font-weight:600">${m.count - m.pass}</td>
+      <td style="color:var(--danger);font-weight:600">${fail}</td>
       <td>${passPct}%</td>
     `;
     tbody.appendChild(tr);
