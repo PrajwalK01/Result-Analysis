@@ -1,20 +1,179 @@
-.admin-search {
-  max-width: 320px;
-  margin-bottom: 16px;
+/* ── Admin panel shared styles ──────────────────────────────────────────── */
+
+/* Tab nav — reuse .tab / .tab--active from user.css, but style links like buttons */
+.tabs a.tab {
+  text-decoration: none;
 }
 
-.data-table td .btn--danger {
-  padding: 6px 12px;
+/* Admin selects — ensure dark option colours match the rest of the UI */
+.admin-form-box select option {
+  background: #1e222d;
+  color: #e8eaf0;
+}
+.admin-form-box select {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--radius);
+  font-size: 13px;
+  transition: border-color 0.15s;
+  cursor: pointer;
+}
+.admin-form-box select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* 4-col form grid (teachers page) */
+.field-grid--4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+@media (max-width: 900px) {
+  .field-grid--4 { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 560px) {
+  .field-grid--4 { grid-template-columns: 1fr; }
+}
+
+/* Form box wrapper — subtle inset */
+.admin-form-box {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 20px 16px;
+  margin-bottom: 8px;
+}
+
+/* Panel header (title + desc row) */
+.admin-panel-header {
+  margin-bottom: 20px;
+}
+
+/* Toolbar: search + count on same row */
+.admin-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.admin-search {
+  flex: 1;
+  max-width: 360px;
+  margin: 0;
+}
+
+.admin-search input {
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+
+.admin-search input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.admin-count {
   font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ── Section labels ── */
+.section-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 4px;
+}
+
+.section-desc {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.5;
+  max-width: 680px;
+}
+
+/* ── Table tweaks ── */
+.col-num {
+  width: 40px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.table-empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 28px 16px !important;
+  font-size: 13px;
+}
+
+/* ── Pill badges ── */
+.code-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: rgba(124,92,255,0.12);
+  color: #a98aff;
+  font-family: monospace;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.branch-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: rgba(0,212,168,0.12);
+  color: var(--accent-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sem-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: rgba(255,184,77,0.12);
+  color: var(--warning);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .credit-badge {
   display: inline-block;
-  min-width: 24px;
-  padding: 2px 8px;
-  border-radius: 6px;
+  min-width: 28px;
+  padding: 3px 10px;
+  border-radius: 20px;
   background: var(--panel-2);
   border: 1px solid var(--border);
-  font-weight: 600;
+  font-weight: 700;
+  font-size: 13px;
   color: var(--accent-2);
+  text-align: center;
+}
+
+.teacher-name {
+  font-weight: 500;
+  color: var(--text);
+}
+
+/* Remove button sizing in table */
+.data-table td .btn--danger {
+  padding: 5px 10px;
+  font-size: 11px;
+  gap: 4px;
 }

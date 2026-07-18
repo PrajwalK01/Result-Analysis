@@ -12,6 +12,7 @@ let CFG = {
   classAward:  [],   // [{min, class}] sorted high→low
   scheme:      { maxMarksPerSubject: 100, maxInternalMarks: 50, maxExternalMarks: 100, maxCredit: 10 },
   appSettings: { toppersCount: 3 },
+  branchMap:   {},   // {USN_code: branch_name} — e.g. {"CS":"CSE","IS":"ISE",...}
 };
 
 async function loadConfig() {
@@ -23,6 +24,7 @@ async function loadConfig() {
       CFG.classAward  = data.classAward  || CFG.classAward;
       CFG.scheme      = data.scheme      || CFG.scheme;
       CFG.appSettings = data.appSettings || CFG.appSettings;
+      CFG.branchMap   = data.branchMap   || CFG.branchMap;
     }
   } catch (e) {
     console.warn('Config fetch failed, using defaults:', e);
@@ -208,19 +210,12 @@ function loadImportedFromBookmarklet() {
 
 /* ==================== BRANCH AUTO-DETECT FROM USN ==================== */
 function detectBranchFromUSN(usn) {
-  // VTU USN format: 1JV24IS022  — chars[5:7] = branch code
+  // VTU USN format: 1JV24IS022 — chars[5:7] = branch code
+  // Uses CFG.branchMap loaded from DB via /api/config — no hardcoding here.
   usn = (usn || '').trim().toUpperCase();
   if (usn.length < 7) return '';
   const code = usn.slice(5, 7);
-  // Match the DEFAULT_BRANCH_MAP from constants.py + common extras
-  const branchMap = {
-    'EC': 'ECE',  'IS': 'ISE',  'CS': 'CSE',
-    'ME': 'ME',   'CV': 'CIVIL','EE': 'EEE',
-    'ET': 'ETE',  'IM': 'IME',  'BT': 'BT',
-    'CH': 'CHE',  'AI': 'AI&ML','AD': 'AI&DS',
-    'CD': 'CSD',  'CY': 'CSE(CY)',
-  };
-  return branchMap[code] || code;
+  return CFG.branchMap[code] || code;
 }
 function initTabs() {
   document.querySelectorAll('.tab').forEach(tab => {
@@ -881,7 +876,7 @@ async function loadAnalysis() {
       return;
     }
 
-    renderDashboard(data.students);
+    renderDashboard(data.students, data.teacherMap || {});
   } catch (e) {
     alert(`Error: ${e.message}`);
   } finally {
@@ -890,7 +885,7 @@ async function loadAnalysis() {
   }
 }
 
-function renderDashboard(students) {
+function renderDashboard(students, teacherMap) {
   document.getElementById('dashResults').classList.remove('hidden');
   document.getElementById('downloadCSVBtn').classList.remove('hidden');
 
@@ -912,7 +907,7 @@ function renderDashboard(students) {
 
   renderToppers(students);
   renderAllStudents(students);
-  renderSubjectAnalysis(students);
+  renderSubjectAnalysis(students, teacherMap || {});
 }
 
 function renderToppers(students) {
@@ -1156,7 +1151,7 @@ function downloadCSV() {
   URL.revokeObjectURL(url);
 }
 
-function renderSubjectAnalysis(students) {
+function renderSubjectAnalysis(students, teacherMap) {
   const map = {};
   students.forEach(s => {
     (s.subjects || []).forEach(sub => {
@@ -1174,10 +1169,12 @@ function renderSubjectAnalysis(students) {
   Object.entries(map).forEach(([code, m]) => {
     const fail    = m.count - m.pass;
     const passPct = ((m.pass / m.count) * 100).toFixed(1);
+    const teacher = (teacherMap && teacherMap[code]) ? teacherMap[code] : '—';
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td style="font-family:monospace;font-size:12px">${code}</td>
       <td style="text-align:left">${m.name}</td>
+      <td style="text-align:left;color:var(--accent-2)">${teacher}</td>
       <td style="color:var(--accent-2);font-weight:600">${m.pass}</td>
       <td style="color:var(--danger);font-weight:600">${fail}</td>
       <td>${passPct}%</td>

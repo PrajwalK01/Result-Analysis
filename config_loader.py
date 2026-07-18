@@ -10,6 +10,7 @@ from constants import (
     COL_CONFIG,
     DOC_GRADE_SCALE, DOC_CLASS_AWARD, DOC_SCHEME,
     DOC_BRANCH_CODES, DOC_APP_SETTINGS, DOC_SUBJECT_CREDITS,
+    DOC_SUBJECT_TEACHERS,
     DEFAULT_GRADE_SCALE, DEFAULT_CLASS_AWARD,
     DEFAULT_SCHEME, DEFAULT_BRANCH_MAP, DEFAULT_APP_SETTINGS,
 )
@@ -122,6 +123,58 @@ def delete_subject_credit(code: str):
     detailed = get_subject_credits_detailed()
     detailed.pop(code, None)
     db.collection(COL_CONFIG).document(DOC_SUBJECT_CREDITS).set({"values": detailed})
+    invalidate_cache()
+
+
+# ── Subject Teachers ──────────────────────────────────────────────────────────
+# Storage format: { "BRANCH||SEM||CODE": { "teacher": str, "branch": str,
+#                                           "semester": str, "code": str } }
+
+def _teacher_key(branch: str, semester: str, code: str) -> str:
+    return f"{branch.strip().upper()}||{semester.strip().upper()}||{code.strip().upper()}"
+
+
+def get_subject_teachers_all() -> dict:
+    """Returns the raw {key: record} dict — for admin list UI."""
+    data = _get(DOC_SUBJECT_TEACHERS, {"values": {}})
+    return data.get("values", {}) if "values" in data else data
+
+
+def get_teacher_map(branch: str, semester: str) -> dict:
+    """Returns {subject_code: teacher_name} for a given branch+semester.
+    Used by the analysis API to annotate each subject row."""
+    all_teachers = get_subject_teachers_all()
+    prefix = f"{branch.strip().upper()}||{semester.strip().upper()}||"
+    result = {}
+    for key, rec in all_teachers.items():
+        if key.startswith(prefix):
+            code = key.split('||')[-1]
+            result[code] = rec.get('teacher', '')
+    return result
+
+
+def upsert_subject_teacher(branch: str, semester: str, code: str, teacher: str):
+    """Admin adds/updates a subject teacher assignment."""
+    key = _teacher_key(branch, semester, code)
+    all_teachers = get_subject_teachers_all()
+    all_teachers[key] = {
+        'branch':   branch.strip(),
+        'semester': semester.strip(),
+        'code':     code.strip().upper(),
+        'teacher':  teacher.strip(),
+    }
+    from firebase_init import get_db
+    get_db().collection(COL_CONFIG).document(DOC_SUBJECT_TEACHERS).set({"values": all_teachers})
+    invalidate_cache()
+
+
+def delete_subject_teacher(branch: str, semester: str, code: str):
+    """Admin removes a teacher assignment."""
+    key = _teacher_key(branch, semester, code)
+    all_teachers = get_subject_teachers_all()
+    all_teachers.pop(key, None)
+    from firebase_init import get_db
+    get_db().collection(COL_CONFIG).document(DOC_SUBJECT_TEACHERS).set({"values": all_teachers})
     invalidate_cache()
 
 

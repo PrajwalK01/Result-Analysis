@@ -21,6 +21,7 @@ DOC_SCHEME          = "scheme"          # max marks, credits, etc.
 DOC_BRANCH_CODES    = "branchCodes"     # USN code → branch name map
 DOC_APP_SETTINGS    = "appSettings"     # role, lockout, toppers count
 DOC_SUBJECT_CREDITS = "subjectCredits"  # subject code → {name, credit}, admin-managed
+DOC_SUBJECT_TEACHERS = "subjectTeachers"  # branch+sem+code → teacher name, admin-managed
 
 # ── UserLogin document field names ───────────────────────────────────────────
 FIELD_USERNAME   = "UserName"

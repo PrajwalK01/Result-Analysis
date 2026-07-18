@@ -17,6 +17,7 @@ from config_loader  import (
     get_branch_map, get_app_settings,
     calc_grade, calc_class_awarded,
     get_subject_credits, upsert_subject_credit,
+    get_teacher_map,
 )
 
 user_bp = Blueprint('user', __name__)
@@ -389,16 +390,18 @@ def parse_vtu_pdf(file_bytes: bytes) -> dict:
 def get_config():
     """Serve grading config to the frontend so JS has zero hardcoding."""
     try:
-        scheme   = get_scheme()
-        grade_s  = get_grade_scale()
-        class_s  = get_class_award()
-        app_s    = get_app_settings()
+        scheme      = get_scheme()
+        grade_s     = get_grade_scale()
+        class_s     = get_class_award()
+        app_s       = get_app_settings()
+        branch_map  = get_branch_map()   # USN code → branch name, DB-driven
         return jsonify({
             'success':    True,
             'gradeScale': grade_s,
             'classAward': class_s,
             'scheme':     scheme,
             'appSettings':app_s,
+            'branchMap':  branch_map,
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -446,7 +449,10 @@ def get_analysis():
         )
         if not docs:
             return jsonify({'success': True, 'students': [], 'message': 'No results found'})
-        return jsonify({'success': True, 'students': [d.to_dict() for d in docs]})
+        # Attach teacher map so frontend can show teacher per subject
+        teacher_map = get_teacher_map(branch, semester)
+        return jsonify({'success': True, 'students': [d.to_dict() for d in docs],
+                        'teacherMap': teacher_map})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
