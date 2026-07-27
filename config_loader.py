@@ -99,19 +99,37 @@ def get_subject_credits() -> dict:
     return {code: rec.get("credit", 0) for code, rec in detailed.items()}
 
 
-def upsert_subject_credit(code: str, name: str, credit: int):
+def upsert_subject_credit(code: str, name: str, credit: int, external_required=None):
     """Admin adds/updates a subject's credit (also called automatically the
-    first time a human confirms a credit while saving a result)."""
+    first time a human confirms a credit while saving a result).
+    external_required=None means "leave whatever was already set" — so the
+    automatic call from save-result never silently re-enables a flag the
+    admin had explicitly turned off for this subject."""
     code = (code or '').strip().upper()
     if not code or not credit:
         return
     from firebase_init import get_db
     db = get_db()
     detailed = get_subject_credits_detailed()
-    existing_name = detailed.get(code, {}).get('name', '')
-    detailed[code] = {"name": (name or existing_name).strip(), "credit": int(credit)}
+    existing = detailed.get(code, {})
+    existing_name = existing.get('name', '')
+    if external_required is None:
+        external_required = existing.get('externalRequired', True)
+    detailed[code] = {
+        "name":             (name or existing_name).strip(),
+        "credit":           int(credit),
+        "externalRequired": bool(external_required),
+    }
     db.collection(COL_CONFIG).document(DOC_SUBJECT_CREDITS).set({"values": detailed})
     invalidate_cache()
+
+
+def get_subject_external_required() -> dict:
+    """{code: bool} — whether the external min-pass rule applies to this
+    subject. Defaults to True (VTU's normal rule) for any subject that
+    hasn't explicitly had it set."""
+    detailed = get_subject_credits_detailed()
+    return {code: rec.get('externalRequired', True) for code, rec in detailed.items()}
 
 
 def delete_subject_credit(code: str):

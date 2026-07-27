@@ -73,7 +73,8 @@ def admin_lookups():
 def list_subjects():
     try:
         detailed = get_subject_credits_detailed()
-        rows = [{'code': code, 'name': rec.get('name', ''), 'credit': rec.get('credit', 0)}
+        rows = [{'code': code, 'credit': rec.get('credit', 0),
+                 'externalRequired': rec.get('externalRequired', True)}
                 for code, rec in detailed.items()]
         rows.sort(key=lambda r: r['code'])
         return jsonify({'success': True, 'subjects': rows})
@@ -88,6 +89,10 @@ def upsert_subject():
     code = (data.get('code') or '').strip()
     name = (data.get('name') or '').strip()
     credit = data.get('credit')
+    # Admin form always sends this explicitly (checked/unchecked), so we
+    # pass it through as a real bool rather than None — None is reserved
+    # for the auto-upsert-on-save call, which should never touch this flag.
+    external_required = bool(data.get('externalRequired', True))
 
     if not code or not credit:
         return jsonify({'success': False, 'error': 'code and credit are both required'}), 400
@@ -99,7 +104,7 @@ def upsert_subject():
         return jsonify({'success': False, 'error': 'Credit must be a number'}), 400
 
     try:
-        upsert_subject_credit(code, name, credit)
+        upsert_subject_credit(code, name, credit, external_required)
         return jsonify({'success': True, 'message': f'{code.upper()} saved.'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500

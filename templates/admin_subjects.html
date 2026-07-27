@@ -81,6 +81,12 @@
             <input id="subjCredit" type="number" min="1" max="10" placeholder="e.g. 4">
           </div>
         </div>
+        <div class="field field--checkbox">
+          <label for="subjExternalRequired">
+            <input id="subjExternalRequired" type="checkbox" checked>
+            Requires external pass mark (≥18) to pass
+          </label>
+        </div>
         <div class="actions">
           <button id="saveSubjectBtn" class="btn btn--primary">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -108,11 +114,11 @@
         <table class="data-table" id="subjectsTable">
           <thead>
             <tr>
-              <th>#</th><th>Subject Code</th><th>Credit</th><th>Action</th>
+              <th>#</th><th>Subject Code</th><th>Credit</th><th>External Req.</th><th>Action</th>
             </tr>
           </thead>
           <tbody>
-            <tr><td colspan="4" class="table-empty">Loading…</td></tr>
+            <tr><td colspan="5" class="table-empty">Loading…</td></tr>
           </tbody>
         </table>
       </div>

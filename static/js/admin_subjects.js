@@ -25,6 +25,7 @@ async function loadSubjects() {
 async function saveSubject() {
   const code   = document.getElementById('subjCode').value.trim().toUpperCase();
   const credit = document.getElementById('subjCredit').value.trim();
+  const externalRequired = document.getElementById('subjExternalRequired').checked;
 
   if (!code || !credit) {
     showMsg('adminMsg', 'Subject Code and Credit are both required.', 'err'); return;
@@ -37,7 +38,7 @@ async function saveSubject() {
     const res  = await fetch(API_SUBJECTS, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ code, credit }),
+      body:    JSON.stringify({ code, credit, externalRequired }),
     });
     const data = await res.json();
     if (data.success) {
@@ -74,6 +75,7 @@ function clearForm() {
   ['subjCode', 'subjCredit'].forEach(id => {
     document.getElementById(id).value = '';
   });
+  document.getElementById('subjExternalRequired').checked = true;
 }
 
 function renderTable() {
@@ -89,7 +91,7 @@ function renderTable() {
   tbody.innerHTML = '';
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4" class="table-empty">
+    tbody.innerHTML = `<tr><td colspan="5" class="table-empty">
       ${q ? 'No subjects match your search.' : 'No subjects added yet.'}</td></tr>`;
     return;
   }
@@ -100,6 +102,7 @@ function renderTable() {
       <td class="col-num">${i + 1}</td>
       <td><span class="code-pill">${s.code}</span></td>
       <td><span class="credit-badge">${s.credit}</span></td>
+      <td>${s.externalRequired ? 'Required' : 'Not required'}</td>
       <td>
         <button class="btn btn--danger btn--sm" data-code="${s.code}">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

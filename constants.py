@@ -81,6 +81,7 @@ DEFAULT_SCHEME = {
     "maxExternalMarks":    100,
     "maxCredit":           10,
     "toppersCount":        3,
+    "minExternalPass":     18,
 }
 
 DEFAULT_APP_SETTINGS = {

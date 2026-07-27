@@ -17,6 +17,7 @@ from config_loader  import (
     get_branch_map, get_app_settings,
     calc_grade, calc_class_awarded,
     get_subject_credits, upsert_subject_credit,
+    get_subject_external_required,
     get_teacher_map,
 )
 
@@ -475,22 +476,36 @@ def save_result():
 
     try:
         scheme = get_scheme()
-        max_per_subject = scheme['maxMarksPerSubject']
+        max_per_subject   = scheme['maxMarksPerSubject']
+        min_external_pass = scheme.get('minExternalPass', 18)
+        external_required_map = get_subject_external_required()
 
         enriched = []
         for s in subjects:
             internal   = max(0, int(s.get('internal', 0)))
             external   = max(0, int(s.get('external', 0)))
             credit     = max(0, int(s.get('credit',   0)))
-            total      = internal + external
-            gp, letter = calc_grade(total)
-            res        = 'P' if gp > 0 else 'F'
-            credit_pts = gp * credit
             code_val   = str(s.get('code', '')).strip().upper()
             name_val   = str(s.get('name', '')).strip()
+            total      = internal + external
+            gp, letter = calc_grade(total)
+
+            # External pass-mark rule: unless the admin has explicitly
+            # disabled it for this subject (Admin → Subjects), scoring
+            # below minExternalPass in the external component fails the
+            # subject outright, even if internal+external together would
+            # otherwise be enough to pass.
+            requires_external = external_required_map.get(code_val, True)
+            if requires_external and external < min_external_pass:
+                gp, letter = 0, 'F'
+
+            res        = 'P' if gp > 0 else 'F'
+            credit_pts = gp * credit
 
             # Remember any credit a human confirms while saving, so the next
             # PDF upload of this same subject auto-fills it and skips review.
+            # external_required is left as None (unchanged) here — this call
+            # must never override a flag the admin already set for this code.
             if credit > 0 and code_val:
                 upsert_subject_credit(code_val, name_val, credit)
 
