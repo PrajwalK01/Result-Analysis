@@ -23,15 +23,19 @@ from config_loader  import (
 user_bp = Blueprint('user', __name__)
 
 
-def _results_collection(semester: str) -> str:
-    """One Firestore collection per semester — e.g. 'results_sem6'. Computed
-    from whatever semester string is submitted (no hardcoded list), so this
-    never needs touching when new semesters/schemes appear. Academic year is
-    NOT part of the collection name — different years reuse the same
-    semester's collection, distinguished by the academicYear field/doc ID,
-    so nothing needs to be created or renamed each new academic year."""
-    slug = re.sub(r'[^A-Za-z0-9]+', '', str(semester)).lower()
-    return f"results_{slug}" if slug else "results_unknown"
+def _results_collection(academic_year: str, semester: str, branch: str) -> str:
+    """One Firestore collection per (academic year, semester, branch) —
+    e.g. '2024_result_sem6_cse'. Each combination gets its own physical
+    collection instead of every branch/year piling into one semester-wide
+    collection. Computed from whatever strings are submitted (no hardcoded
+    list), so nothing needs touching when a new year/branch/scheme appears."""
+    def _slug(value, fallback):
+        s = re.sub(r'[^A-Za-z0-9]+', '', str(value)).lower()
+        return s or fallback
+    year_slug   = _slug(academic_year, 'unknownyear')
+    sem_slug    = _slug(semester,      'unknownsem')
+    branch_slug = _slug(branch,        'unknownbranch')
+    return f"{year_slug}_result_{sem_slug}_{branch_slug}"
 
 
 def login_required(view):
@@ -440,12 +444,9 @@ def get_analysis():
         return jsonify({'success': False,
                         'error': 'branch, semester and academicYear are required'}), 400
     try:
-        collection_name = _results_collection(semester)
+        collection_name = _results_collection(academic_year, semester, branch)
         docs = list(
-            get_db().collection(collection_name)
-            .where(FIELD_BRANCH,        '==', branch)
-            .where(FIELD_ACADEMIC_YEAR, '==', academic_year)
-            .stream()
+            get_db().collection(collection_name).stream()
         )
         if not docs:
             return jsonify({'success': True, 'students': [], 'message': 'No results found'})
@@ -517,16 +518,18 @@ def save_result():
         has_fail   = any(s['result'] == 'F' for s in enriched)
         cls        = calc_class_awarded(has_fail, percentage)
 
-        # Deterministic document ID within the semester's own collection:
-        # USN + branch + academic year (semester is already implied by which
-        # collection this is, so it's not repeated in the ID). Re-uploading
-        # the same student's same-year result for this semester UPDATES the
-        # existing document instead of creating a duplicate.
+        # Deterministic document ID within this year+semester+branch
+        # collection: USN alone is enough now, since branch/year/semester
+        # are already implied by which collection the doc lives in.
+        # Re-uploading the same student's result UPDATES the existing
+        # document instead of creating a duplicate.
         def _slug(s):
             return re.sub(r'[^A-Za-z0-9]+', '', str(s)).upper()
 
-        collection_name = _results_collection(data[FIELD_SEMESTER])
-        doc_id  = f"{_slug(data[FIELD_USN])}_{_slug(data[FIELD_BRANCH])}_{_slug(data[FIELD_ACADEMIC_YEAR])}"
+        collection_name = _results_collection(
+            data[FIELD_ACADEMIC_YEAR], data[FIELD_SEMESTER], data[FIELD_BRANCH]
+        )
+        doc_id  = _slug(data[FIELD_USN])
         doc_ref = get_db().collection(collection_name).document(doc_id)
         is_update = doc_ref.get().exists
 
