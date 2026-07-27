@@ -71,14 +71,10 @@
 
       <!-- Add / Update form -->
       <div class="admin-form-box">
-        <div class="field-grid field-grid--3">
+        <div class="field-grid field-grid--2">
           <div class="field">
             <label for="subjCode">Subject Code</label>
             <input id="subjCode" placeholder="e.g. BCS601" autocomplete="off">
-          </div>
-          <div class="field">
-            <label for="subjName">Subject Name</label>
-            <input id="subjName" placeholder="e.g. Cloud Computing" autocomplete="off">
           </div>
           <div class="field">
             <label for="subjCredit">Credit</label>
@@ -103,7 +99,7 @@
 
       <div class="admin-toolbar">
         <div class="field admin-search">
-          <input id="subjectSearch" placeholder="🔍  Filter by code or name…">
+          <input id="subjectSearch" placeholder="🔍  Filter by code…">
         </div>
         <span id="subjectCount" class="admin-count"></span>
       </div>
@@ -112,11 +108,11 @@
         <table class="data-table" id="subjectsTable">
           <thead>
             <tr>
-              <th>#</th><th>Subject Code</th><th>Subject Name</th><th>Credit</th><th>Action</th>
+              <th>#</th><th>Subject Code</th><th>Credit</th><th>Action</th>
             </tr>
           </thead>
           <tbody>
-            <tr><td colspan="5" class="table-empty">Loading…</td></tr>
+            <tr><td colspan="4" class="table-empty">Loading…</td></tr>
           </tbody>
         </table>
       </div>

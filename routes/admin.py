@@ -89,8 +89,8 @@ def upsert_subject():
     name = (data.get('name') or '').strip()
     credit = data.get('credit')
 
-    if not code or not name or not credit:
-        return jsonify({'success': False, 'error': 'code, name and credit are all required'}), 400
+    if not code or not credit:
+        return jsonify({'success': False, 'error': 'code and credit are both required'}), 400
     try:
         credit = int(credit)
         if credit <= 0 or credit > 10:

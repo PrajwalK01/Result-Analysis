@@ -24,11 +24,10 @@ async function loadSubjects() {
 
 async function saveSubject() {
   const code   = document.getElementById('subjCode').value.trim().toUpperCase();
-  const name   = document.getElementById('subjName').value.trim();
   const credit = document.getElementById('subjCredit').value.trim();
 
-  if (!code || !name || !credit) {
-    showMsg('adminMsg', 'Subject Code, Name and Credit are all required.', 'err'); return;
+  if (!code || !credit) {
+    showMsg('adminMsg', 'Subject Code and Credit are both required.', 'err'); return;
   }
 
   const btn = document.getElementById('saveSubjectBtn');
@@ -38,7 +37,7 @@ async function saveSubject() {
     const res  = await fetch(API_SUBJECTS, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ code, name, credit }),
+      body:    JSON.stringify({ code, credit }),
     });
     const data = await res.json();
     if (data.success) {
@@ -72,7 +71,7 @@ async function removeSubject(code) {
 }
 
 function clearForm() {
-  ['subjCode', 'subjName', 'subjCredit'].forEach(id => {
+  ['subjCode', 'subjCredit'].forEach(id => {
     document.getElementById(id).value = '';
   });
 }
@@ -83,14 +82,14 @@ function renderTable() {
   const countEl = document.getElementById('subjectCount');
 
   const filtered = allSubjects.filter(s =>
-    s.code.toLowerCase().includes(q) || s.name.toLowerCase().includes(q)
+    s.code.toLowerCase().includes(q)
   );
 
   countEl.textContent = `${filtered.length} subject${filtered.length !== 1 ? 's' : ''}`;
   tbody.innerHTML = '';
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" class="table-empty">
+    tbody.innerHTML = `<tr><td colspan="4" class="table-empty">
       ${q ? 'No subjects match your search.' : 'No subjects added yet.'}</td></tr>`;
     return;
   }
@@ -100,7 +99,6 @@ function renderTable() {
     tr.innerHTML = `
       <td class="col-num">${i + 1}</td>
       <td><span class="code-pill">${s.code}</span></td>
-      <td>${s.name}</td>
       <td><span class="credit-badge">${s.credit}</span></td>
       <td>
         <button class="btn btn--danger btn--sm" data-code="${s.code}">
