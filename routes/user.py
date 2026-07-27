@@ -400,6 +400,7 @@ def get_config():
         class_s     = get_class_award()
         app_s       = get_app_settings()
         branch_map  = get_branch_map()   # USN code → branch name, DB-driven
+        external_required_map = get_subject_external_required()
         return jsonify({
             'success':    True,
             'gradeScale': grade_s,
@@ -407,6 +408,7 @@ def get_config():
             'scheme':     scheme,
             'appSettings':app_s,
             'branchMap':  branch_map,
+            'subjectExternalRequired': external_required_map,
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
