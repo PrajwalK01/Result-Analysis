@@ -8,6 +8,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('saveSubjectBtn').addEventListener('click', saveSubject);
   document.getElementById('clearSubjectBtn').addEventListener('click', clearForm);
   document.getElementById('subjectSearch').addEventListener('input', renderTable);
+  document.getElementById('filterExternalRequired').addEventListener('change', renderTable);
+  document.getElementById('filterCredit').addEventListener('change', renderTable);
   loadSubjects();
 });
 
@@ -15,11 +17,25 @@ async function loadSubjects() {
   try {
     const res  = await fetch(API_SUBJECTS);
     const data = await res.json();
-    if (data.success) { allSubjects = data.subjects; renderTable(); }
+    if (data.success) { allSubjects = data.subjects; populateCreditFilterOptions(); renderTable(); }
     else showMsg('adminMsg', data.error || 'Failed to load.', 'err');
   } catch (e) {
     showMsg('adminMsg', `Network error: ${e.message}`, 'err');
   }
+}
+
+// Keeps the Credit filter's options matching whatever credit values actually
+// exist right now, instead of a fixed guessed range. Preserves the current
+// selection if it's still one of the available values.
+function populateCreditFilterOptions() {
+  const sel = document.getElementById('filterCredit');
+  const current = sel.value;
+  const credits = [...new Set(allSubjects.map(s => s.credit))].sort((a, b) => a - b);
+
+  sel.innerHTML = '<option value="">All Credits</option>' +
+    credits.map(c => `<option value="${c}">${c} credit${c === 1 ? '' : 's'}</option>`).join('');
+
+  if (credits.some(c => String(c) === current)) sel.value = current;
 }
 
 async function saveSubject() {
@@ -79,20 +95,26 @@ function clearForm() {
 }
 
 function renderTable() {
-  const q     = document.getElementById('subjectSearch').value.trim().toLowerCase();
-  const tbody = document.querySelector('#subjectsTable tbody');
+  const q            = document.getElementById('subjectSearch').value.trim().toLowerCase();
+  const reqFilter     = document.getElementById('filterExternalRequired').value;   // '', 'required', 'notRequired'
+  const creditFilter  = document.getElementById('filterCredit').value;             // '' or a credit number as string
+  const tbody   = document.querySelector('#subjectsTable tbody');
   const countEl = document.getElementById('subjectCount');
 
-  const filtered = allSubjects.filter(s =>
-    s.code.toLowerCase().includes(q)
-  );
+  const filtered = allSubjects.filter(s => {
+    if (!s.code.toLowerCase().includes(q)) return false;
+    if (reqFilter === 'required'    && !s.externalRequired) return false;
+    if (reqFilter === 'notRequired' &&  s.externalRequired) return false;
+    if (creditFilter && String(s.credit) !== creditFilter) return false;
+    return true;
+  });
 
   countEl.textContent = `${filtered.length} subject${filtered.length !== 1 ? 's' : ''}`;
   tbody.innerHTML = '';
 
   if (filtered.length === 0) {
     tbody.innerHTML = `<tr><td colspan="5" class="table-empty">
-      ${q ? 'No subjects match your search.' : 'No subjects added yet.'}</td></tr>`;
+      ${q || reqFilter || creditFilter ? 'No subjects match your filters.' : 'No subjects added yet.'}</td></tr>`;
     return;
   }
 

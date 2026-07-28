@@ -104,23 +104,37 @@ def upsert_subject_credit(code: str, name: str, credit: int, external_required=N
     first time a human confirms a credit while saving a result).
     external_required=None means "leave whatever was already set" — so the
     automatic call from save-result never silently re-enables a flag the
-    admin had explicitly turned off for this subject."""
+    admin had explicitly turned off for this subject.
+
+    IMPORTANT: writes only this one subject's own field via a Firestore
+    merge, rather than reading the whole subjects map and writing it back.
+    A read-modify-write-the-whole-map pattern is a race condition: if two
+    saves ever overlap (a double-click, a slow response, two different
+    serverless instances), the second write can silently wipe out subjects
+    the first write had just added, since it read an older snapshot of the
+    map before the first write landed. A field-level merge can't do that —
+    each subject only ever touches its own key."""
     code = (code or '').strip().upper()
     if not code or not credit:
         return
     from firebase_init import get_db
     db = get_db()
-    detailed = get_subject_credits_detailed()
-    existing = detailed.get(code, {})
-    existing_name = existing.get('name', '')
+    doc_ref = db.collection(COL_CONFIG).document(DOC_SUBJECT_CREDITS)
+
+    existing_name = ''
     if external_required is None:
+        # Read fresh (not the TTL cache) — only to preserve THIS subject's
+        # own prior name/flag, never anyone else's.
+        snap = doc_ref.get()
+        existing = snap.to_dict().get('values', {}).get(code, {}) if snap.exists else {}
+        existing_name     = existing.get('name', '')
         external_required = existing.get('externalRequired', True)
-    detailed[code] = {
+
+    doc_ref.set({"values": {code: {
         "name":             (name or existing_name).strip(),
         "credit":           int(credit),
         "externalRequired": bool(external_required),
-    }
-    db.collection(COL_CONFIG).document(DOC_SUBJECT_CREDITS).set({"values": detailed})
+    }}}, merge=True)
     invalidate_cache()
 
 
@@ -137,10 +151,10 @@ def delete_subject_credit(code: str):
     if not code:
         return
     from firebase_init import get_db
+    from firebase_admin import firestore
     db = get_db()
-    detailed = get_subject_credits_detailed()
-    detailed.pop(code, None)
-    db.collection(COL_CONFIG).document(DOC_SUBJECT_CREDITS).set({"values": detailed})
+    doc_ref = db.collection(COL_CONFIG).document(DOC_SUBJECT_CREDITS)
+    doc_ref.update({f"values.{code}": firestore.DELETE_FIELD})
     invalidate_cache()
 
 
