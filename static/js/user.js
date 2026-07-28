@@ -645,7 +645,12 @@ function addSubjectRow(prefill = {}) {
     <!-- Computed (always visible) -->
     <td id="total-${id}"  style="font-weight:600;text-align:center;">—</td>
     <td id="grade-${id}"  style="font-weight:600;color:var(--muted);text-align:center;">—</td>
-    <td id="result-${id}" style="text-align:center;"><span class="badge badge--na">—</span></td>
+    <td id="result-${id}" style="text-align:center;">
+      <span class="badge badge--na">—</span>
+      <label class="absent-label cell-input" style="display:block;margin-top:4px;font-size:10px;color:var(--warning);cursor:pointer;">
+        <input type="checkbox" id="absent-${id}" style="margin-right:3px;" ${prefill.result === 'A' ? 'checked' : ''}>Absent
+      </label>
+    </td>
 
     <!-- Delete (hidden in view mode) -->
     <td style="text-align:center;">
@@ -659,11 +664,20 @@ function addSubjectRow(prefill = {}) {
   const internalEl = tr.querySelector(`#internal-${id}`);
   const externalEl = tr.querySelector(`#external-${id}`);
   const creditEl   = tr.querySelector(`#credit-${id}`);
+  const absentEl   = tr.querySelector(`#absent-${id}`);
 
   codeEl.addEventListener('blur', () => autoFillCreditFromAdmin(id));
   internalEl.addEventListener('input', () => recalcRow(id));
   externalEl.addEventListener('input', () => recalcRow(id));
   creditEl.addEventListener('input', recalcSummary);
+  absentEl.addEventListener('change', () => {
+    if (absentEl.checked) {
+      // Clear marks when absent is ticked
+      internalEl.value = '';
+      externalEl.value = '';
+    }
+    recalcRow(id);
+  });
 
   tr.querySelector(`[data-remove="${id}"]`).addEventListener('click', () => {
     tr.remove();
@@ -705,15 +719,24 @@ function recalcRow(id) {
     gradeEl.textContent  = '—';
     resultEl.innerHTML   = '<span class="badge badge--na">—</span>';
   } else {
-    const code = document.getElementById(`code-${id}`).value.trim().toUpperCase();
-    let gp     = getGradePoint(total);
-    let letter = getLetterGrade(total);
-    ({ gp, letter } = applyExternalPassRule(code, external, gp, letter));
-    totalEl.textContent  = total;
-    gradeEl.innerHTML    = `${gp} <span style="font-size:11px;color:var(--muted);">(${letter})</span>`;
-    resultEl.innerHTML   = gp > 0
-      ? '<span class="badge badge--pass">PASS</span>'
-      : '<span class="badge badge--fail">FAIL</span>';
+    const code    = document.getElementById(`code-${id}`).value.trim().toUpperCase();
+    const absentCb = document.getElementById(`absent-${id}`);
+    const isAbsent = absentCb && absentCb.checked;
+
+    if (isAbsent) {
+      totalEl.textContent = '—';
+      gradeEl.textContent = '—';
+      resultEl.innerHTML  = '<span class="badge badge--absent">ABSENT</span>';
+    } else {
+      let gp     = getGradePoint(total);
+      let letter = getLetterGrade(total);
+      ({ gp, letter } = applyExternalPassRule(code, external, gp, letter));
+      totalEl.textContent  = total;
+      gradeEl.innerHTML    = `${gp} <span style="font-size:11px;color:var(--muted);">(${letter})</span>`;
+      resultEl.innerHTML   = gp > 0
+        ? '<span class="badge badge--pass">PASS</span>'
+        : '<span class="badge badge--fail">FAIL</span>';
+    }
   }
 
   recalcSummary();
@@ -734,6 +757,18 @@ function collectSubjects() {
     const code     = document.getElementById(`code-${id}`).value.trim();
     const name     = document.getElementById(`name-${id}`).value.trim();
     const credit   = parseFloat(document.getElementById(`credit-${id}`).value)   || 0;
+    const absentCb = document.getElementById(`absent-${id}`);
+    const isAbsent = absentCb && absentCb.checked;
+
+    if (isAbsent) {
+      // Absent — include in list so it's saved, but no marks/grade/credit points
+      if (code) acc.push({
+        code, name, credit, internal: 0, external: 0, total: 0,
+        grade: 0, letterGrade: 'A', result: 'A', creditPoints: 0,
+      });
+      return acc;
+    }
+
     const internal = parseFloat(document.getElementById(`internal-${id}`).value) || 0;
     const external = parseFloat(document.getElementById(`external-${id}`).value) || 0;
     const total    = internal + external;
@@ -750,13 +785,14 @@ function collectSubjects() {
 
 function recalcSummary() {
   const subjects = collectSubjects();
-  const sumTotal  = subjects.reduce((a, s) => a + s.total, 0);
-  const totCred   = subjects.reduce((a, s) => a + s.credit, 0);
-  const totCP     = subjects.reduce((a, s) => a + s.creditPoints, 0);
+  // Absent subjects don't contribute to SGPA/percentage/class
+  const appeared  = subjects.filter(s => s.result !== 'A');
+  const sumTotal  = appeared.reduce((a, s) => a + s.total, 0);
+  const totCred   = appeared.reduce((a, s) => a + s.credit, 0);
+  const totCP     = appeared.reduce((a, s) => a + s.creditPoints, 0);
   const sgpa      = totCred > 0 ? totCP / totCred : 0;
-  // VTU formula: Percentage = SGPA × 10
   const pct       = sgpa > 0 ? sgpa * 10 : 0;
-  const hasFail   = subjects.some(s => s.result === 'F');
+  const hasFail   = appeared.some(s => s.result === 'F');
   const cls       = subjects.length > 0 ? getClassAwarded(hasFail, pct) : '—';
 
   document.getElementById('sumTotal').textContent = subjects.length > 0 ? sumTotal   : '0';
@@ -1133,21 +1169,26 @@ function renderAllStudents(students) {
     subjectOrder.forEach(code => {
       const sub = subMap[code];
       if (sub) {
-        const isPass = sub.result === 'P';
-        const gp     = sub.grade !== undefined ? sub.grade : (sub.gradePoint || 0);
-        const credit = sub.credit || 0;
-        const tgp    = gp * credit;   // TGP = Grade Points × Credits
+        const isPass   = sub.result === 'P';
+        const isAbsent = sub.result === 'A' || sub.result === 'AB';
+        const gp       = sub.grade !== undefined ? sub.grade : (sub.gradePoint || 0);
+        const credit   = sub.credit || 0;
+        const tgp      = isAbsent ? 0 : gp * credit;
         [
-          { val: sub.internal,  style: '' },
-          { val: sub.external,  style: '' },
-          { val: sub.total,     style: 'font-weight:600' },
-          { val: sub.result,    isResult: true, pass: isPass },
-          { val: gp,            style: isPass ? 'color:var(--accent-2)' : 'color:var(--danger)' },
-          { val: tgp,           style: 'font-weight:600;color:var(--muted)' },
+          { val: isAbsent ? '—' : sub.internal,  style: '' },
+          { val: isAbsent ? '—' : sub.external,  style: '' },
+          { val: isAbsent ? '—' : sub.total,     style: 'font-weight:600' },
+          { val: sub.result,  isResult: true, pass: isPass, absent: isAbsent },
+          { val: isAbsent ? '—' : gp,   style: isPass ? 'color:var(--accent-2)' : 'color:var(--danger)' },
+          { val: isAbsent ? '—' : tgp,  style: 'font-weight:600;color:var(--muted)' },
         ].forEach(col => {
           const td = document.createElement('td');
           if (col.isResult) {
-            td.innerHTML = `<span class="${col.pass ? 'res-pass' : 'res-fail'}">${col.val}</span>`;
+            if (col.absent) {
+              td.innerHTML = `<span class="badge badge--absent">AB</span>`;
+            } else {
+              td.innerHTML = `<span class="${col.pass ? 'res-pass' : 'res-fail'}">${col.val}</span>`;
+            }
           } else {
             td.textContent = col.val ?? '—';
             if (col.style) td.setAttribute('style', col.style);
@@ -1375,17 +1416,23 @@ function downloadCSV() {
   const subMap2 = {};
   students.forEach(s => {
     (s.subjects || []).forEach(sub => {
-      if (!subMap2[sub.code]) subMap2[sub.code] = { name: sub.name, count: 0, pass: 0 };
-      subMap2[sub.code].count += 1;
-      if (sub.result === 'P') subMap2[sub.code].pass += 1;
+      if (!subMap2[sub.code]) subMap2[sub.code] = { name: sub.name, count: 0, pass: 0, fail: 0, absent: 0 };
+      const res = (sub.result || '').toUpperCase();
+      if (res === 'A' || res === 'AB') {
+        subMap2[sub.code].absent += 1;
+      } else {
+        subMap2[sub.code].count += 1;
+        if (res === 'P') subMap2[sub.code].pass += 1;
+        else             subMap2[sub.code].fail += 1;
+      }
     });
   });
   s1.push(['SUBJECT-WISE ANALYSIS']);
-  s1.push(['Subject Code', 'Subject Name', 'Total Students', 'Pass', 'Fail', 'Pass %']);
+  s1.push(['Subject Code', 'Subject Name', 'Total Students', 'Absent', 'Pass', 'Fail', 'Pass %']);
   Object.entries(subMap2).forEach(([code, m]) => {
-    const fail    = m.count - m.pass;
-    const pct     = ((m.pass / m.count) * 100).toFixed(1);
-    s1.push([code, m.name, m.count, m.pass, fail, `${pct}%`]);
+    const total = m.count + m.absent;
+    const pct   = m.count > 0 ? ((m.pass / m.count) * 100).toFixed(1) : '0.0';
+    s1.push([code, m.name, total, m.absent > 0 ? m.absent : 0, m.pass, m.fail, `${pct}%`]);
   });
 
   const ws1 = XLSX.utils.aoa_to_sheet(s1);
@@ -1455,32 +1502,42 @@ function downloadCSV() {
 }
 
 function renderSubjectAnalysis(students, teacherMap) {
+  const totalStudents = students.length;
   const map = {};
   students.forEach(s => {
     (s.subjects || []).forEach(sub => {
       if (!map[sub.code]) {
-        map[sub.code] = { name: sub.name, count: 0, pass: 0 };
+        map[sub.code] = { name: sub.name, present: 0, pass: 0, fail: 0, absent: 0 };
       }
       const m = map[sub.code];
-      m.count += 1;
-      if (sub.result === 'P') m.pass += 1;
+      const res = (sub.result || '').toUpperCase();
+      if (res === 'A' || res === 'AB') {
+        m.absent += 1;
+      } else {
+        m.present += 1;
+        if (res === 'P') m.pass += 1;
+        else             m.fail += 1;
+      }
     });
   });
 
   const tbody = document.querySelector('#subjectTable tbody');
   tbody.innerHTML = '';
   Object.entries(map).forEach(([code, m]) => {
-    const fail    = m.count - m.pass;
-    const passPct = ((m.pass / m.count) * 100).toFixed(1);
+    // Total = present + absent (everyone in the batch who has this subject entry)
+    const total   = m.present + m.absent;
+    // Pass % = pass out of those who actually appeared (not absent)
+    const passPct = m.present > 0 ? ((m.pass / m.present) * 100).toFixed(1) : '0.0';
     const teacher = (teacherMap && teacherMap[code]) ? teacherMap[code] : '—';
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td style="font-family:monospace;font-size:12px">${code}</td>
       <td style="text-align:left">${m.name}</td>
       <td style="text-align:left;color:var(--accent-2)">${teacher}</td>
-      <td style="font-weight:600">${m.count}</td>
+      <td style="font-weight:600">${total}</td>
+      <td style="color:var(--warning);font-weight:600">${m.absent > 0 ? m.absent : '—'}</td>
       <td style="color:var(--accent-2);font-weight:600">${m.pass}</td>
-      <td style="color:var(--danger);font-weight:600">${fail}</td>
+      <td style="color:var(--danger);font-weight:600">${m.fail}</td>
       <td>${passPct}%</td>
     `;
     tbody.appendChild(tr);

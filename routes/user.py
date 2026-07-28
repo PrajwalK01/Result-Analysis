@@ -179,29 +179,37 @@ def _parse_subject_table(pdf) -> list:
                 internal, internal_blank = _cell_state(cells[2] if len(cells) > 2 else '')
                 external, external_blank = _cell_state(cells[3] if len(cells) > 3 else '')
                 total,    total_blank    = _cell_state(cells[4] if len(cells) > 4 else '')
-                result_flag = (cells[5].strip().upper()[:1] if len(cells) > 5 and cells[5].strip() else None)
+                result_flag = (cells[5].strip().upper() if len(cells) > 5 and cells[5].strip() else None)
+
+                # Detect absent: VTU prints "A" or "AB" in the result column
+                is_absent = result_flag in ('A', 'AB') if result_flag else False
 
                 needs_review = False
                 reasons = []
 
-                if internal_blank:
+                if not is_absent and internal_blank:
                     needs_review = True
                     reasons.append('Internal marks cell was blank.')
-                if external_blank:
+                if not is_absent and external_blank:
                     needs_review = True
                     reasons.append('External marks cell was blank.')
 
-                if total_blank:
+                if not is_absent and total_blank:
                     total = internal + external
                     needs_review = True
                     reasons.append('Total cell was blank — computed from internal+external.')
-                elif abs((internal + external) - total) > 2:
+                elif not is_absent and abs((internal + external) - total) > 2:
                     needs_review = True
                     reasons.append('Internal+External does not match printed Total.')
 
-                res = ('P' if result_flag == 'P' else
-                       'F' if result_flag == 'F' else
-                       ('P' if calc_grade(total)[0] > 0 else 'F'))
+                if is_absent:
+                    res = 'A'
+                elif result_flag == 'P':
+                    res = 'P'
+                elif result_flag == 'F':
+                    res = 'F'
+                else:
+                    res = 'P' if calc_grade(total)[0] > 0 else 'F'
 
                 credit = credit_map.get(code, 0)
                 if code not in credit_map:
@@ -491,25 +499,28 @@ def save_result():
             credit     = max(0, int(s.get('credit',   0)))
             code_val   = str(s.get('code', '')).strip().upper()
             name_val   = str(s.get('name', '')).strip()
+            raw_result = str(s.get('result', '')).strip().upper()
+            is_absent  = raw_result in ('A', 'AB')
+
             total      = internal + external
-            gp, letter = calc_grade(total)
 
-            # External pass-mark rule: unless the admin has explicitly
-            # disabled it for this subject (Admin → Subjects), scoring
-            # below minExternalPass in the external component fails the
-            # subject outright, even if internal+external together would
-            # otherwise be enough to pass.
-            requires_external = external_required_map.get(code_val, True)
-            if requires_external and external < min_external_pass:
-                gp, letter = 0, 'F'
+            if is_absent:
+                # Absent — no grade, no credit points, not counted as fail
+                gp, letter = 0, 'A'
+                res        = 'A'
+                credit_pts = 0
+            else:
+                gp, letter = calc_grade(total)
 
-            res        = 'P' if gp > 0 else 'F'
-            credit_pts = gp * credit
+                # External pass-mark rule
+                requires_external = external_required_map.get(code_val, True)
+                if requires_external and external < min_external_pass:
+                    gp, letter = 0, 'F'
 
-            # Remember any credit a human confirms while saving, so the next
-            # PDF upload of this same subject auto-fills it and skips review.
-            # external_required is left as None (unchanged) here — this call
-            # must never override a flag the admin already set for this code.
+                res        = 'P' if gp > 0 else 'F'
+                credit_pts = gp * credit
+
+            # Remember any credit a human confirms while saving
             if credit > 0 and code_val:
                 upsert_subject_credit(code_val, name_val, credit)
 
@@ -534,7 +545,7 @@ def save_result():
         sgpa       = round(total_credit_points / total_credits, 2) if total_credits > 0 else 0.0
         # Percentage = SGPA × 10
         percentage = round(sgpa * 10, 2) if sgpa > 0 else 0.0
-        has_fail   = any(s['result'] == 'F' for s in enriched)
+        has_fail   = any(s['result'] == 'F' for s in enriched)   # 'A' is not a fail
         cls        = calc_class_awarded(has_fail, percentage)
 
         # Deterministic document ID within this year+semester+branch

@@ -518,9 +518,10 @@ select option {
   letter-spacing: 0.04em;
 }
 
-.badge--pass { background: rgba(0,212,168,0.15); color: var(--accent-2); }
-.badge--fail { background: rgba(255,92,122,0.15); color: var(--danger); }
-.badge--na   { background: var(--panel-2); color: var(--muted); }
+.badge--pass   { background: rgba(0,212,168,0.15); color: var(--accent-2); }
+.badge--fail   { background: rgba(255,92,122,0.15); color: var(--danger); }
+.badge--na     { background: var(--panel-2); color: var(--muted); }
+.badge--absent { background: rgba(255,184,77,0.18); color: var(--warning); }
 
 .topper-badge {
   display: inline-flex;
