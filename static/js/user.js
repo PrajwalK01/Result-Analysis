@@ -754,8 +754,8 @@ function recalcSummary() {
   const totCred   = subjects.reduce((a, s) => a + s.credit, 0);
   const totCP     = subjects.reduce((a, s) => a + s.creditPoints, 0);
   const sgpa      = totCred > 0 ? totCP / totCred : 0;
-  // VTU formula: Percentage = (SGPA - 0.75) × 10
-  const pct       = sgpa > 0 ? Math.max(0, (sgpa - 0.75) * 10) : 0;
+  // VTU formula: Percentage = SGPA × 10
+  const pct       = sgpa > 0 ? sgpa * 10 : 0;
   const hasFail   = subjects.some(s => s.result === 'F');
   const cls       = subjects.length > 0 ? getClassAwarded(hasFail, pct) : '—';
 
