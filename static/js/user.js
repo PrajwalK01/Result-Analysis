@@ -120,7 +120,21 @@ function setupBookmarklet() {
         var internal = parseInt(cells[2],10); if(isNaN(internal)) internal = 0;
         var external = parseInt(cells[3],10); if(isNaN(external)) external = 0;
         var total    = parseInt(cells[4],10); if(isNaN(total)) total = internal+external;
-        var result   = (cells[5]||'').trim().toUpperCase().charAt(0) || (total>0?'P':'F');
+
+        // Find the result cell — VTU puts P/F/A/W/X/NE/NA in the Result column.
+        // Search cells[5] onwards for a recognisable result code so layout
+        // changes (extra columns) don't silently turn Absent into Fail.
+        var result = '';
+        for(var ci=5; ci<cells.length; ci++){
+          var rv = (cells[ci]||'').trim().toUpperCase();
+          if(/^(P|F|A|AB|W|X|NE|NA)$/.test(rv)){ result = rv; break; }
+        }
+        // Only fall back to computed P/F when we truly found no result code
+        // AND there are actual marks — never default to F when marks are zero
+        // (zero external = absent, not necessarily fail)
+        if(!result){
+          result = (internal>0||external>0) ? (total>=40?'P':'F') : 'A';
+        }
 
         subjects.push({code:code, name:name, internal:internal, external:external, total:total, result:result});
       }
@@ -1170,7 +1184,8 @@ function renderAllStudents(students) {
       const sub = subMap[code];
       if (sub) {
         const isPass   = sub.result === 'P';
-        const isAbsent = sub.result === 'A' || sub.result === 'AB';
+        const NON_ATT  = ['A', 'AB', 'W', 'X', 'NE', 'NA', '-'];
+        const isAbsent = NON_ATT.includes((sub.result || '').toUpperCase());
         const gp       = sub.grade !== undefined ? sub.grade : (sub.gradePoint || 0);
         const credit   = sub.credit || 0;
         const tgp      = isAbsent ? 0 : gp * credit;
@@ -1185,7 +1200,8 @@ function renderAllStudents(students) {
           const td = document.createElement('td');
           if (col.isResult) {
             if (col.absent) {
-              td.innerHTML = `<span class="badge badge--absent">AB</span>`;
+              // Show actual code (A / W / X etc.) in amber badge
+              td.innerHTML = `<span class="badge badge--absent">${col.val || 'A'}</span>`;
             } else {
               td.innerHTML = `<span class="${col.pass ? 'res-pass' : 'res-fail'}">${col.val}</span>`;
             }
@@ -1417,13 +1433,14 @@ function downloadCSV() {
   students.forEach(s => {
     (s.subjects || []).forEach(sub => {
       if (!subMap2[sub.code]) subMap2[sub.code] = { name: sub.name, count: 0, pass: 0, fail: 0, absent: 0 };
-      const res = (sub.result || '').toUpperCase();
-      if (res === 'A' || res === 'AB') {
+      const NON_ATT2 = ['A', 'AB', 'W', 'X', 'NE', 'NA', '-'];
+      const res2 = (sub.result || '').toUpperCase();
+      if (NON_ATT2.includes(res2)) {
         subMap2[sub.code].absent += 1;
       } else {
         subMap2[sub.code].count += 1;
-        if (res === 'P') subMap2[sub.code].pass += 1;
-        else             subMap2[sub.code].fail += 1;
+        if (res2 === 'P') subMap2[sub.code].pass += 1;
+        else              subMap2[sub.code].fail += 1;
       }
     });
   });
@@ -1510,8 +1527,9 @@ function renderSubjectAnalysis(students, teacherMap) {
         map[sub.code] = { name: sub.name, present: 0, pass: 0, fail: 0, absent: 0 };
       }
       const m = map[sub.code];
+      const NON_ATT = ['A', 'AB', 'W', 'X', 'NE', 'NA', '-'];
       const res = (sub.result || '').toUpperCase();
-      if (res === 'A' || res === 'AB') {
+      if (NON_ATT.includes(res)) {
         m.absent += 1;
       } else {
         m.present += 1;

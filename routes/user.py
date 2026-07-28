@@ -181,8 +181,9 @@ def _parse_subject_table(pdf) -> list:
                 total,    total_blank    = _cell_state(cells[4] if len(cells) > 4 else '')
                 result_flag = (cells[5].strip().upper() if len(cells) > 5 and cells[5].strip() else None)
 
-                # Detect absent: VTU prints "A" or "AB" in the result column
-                is_absent = result_flag in ('A', 'AB') if result_flag else False
+                # Detect non-attempt: VTU prints A/AB/W/X/NE/NA in result column
+                NON_ATTEMPT = {'A', 'AB', 'W', 'X', 'NE', 'NA', '-'}
+                is_absent = result_flag in NON_ATTEMPT if result_flag else False
 
                 needs_review = False
                 reasons = []
@@ -500,7 +501,9 @@ def save_result():
             code_val   = str(s.get('code', '')).strip().upper()
             name_val   = str(s.get('name', '')).strip()
             raw_result = str(s.get('result', '')).strip().upper()
-            is_absent  = raw_result in ('A', 'AB')
+            # A, AB, W, X, NE, NA, - = non-attempt (not pass, not fail)
+            NON_ATTEMPT = {'A', 'AB', 'W', 'X', 'NE', 'NA', '-', ''}
+            is_absent  = raw_result in NON_ATTEMPT
 
             total      = internal + external
 
@@ -657,10 +660,20 @@ def resolve_import():
             code = str(s.get('code', '')).strip().upper()
             credit = credit_map.get(code, 0)
             is_defined = code in credit_map
+            raw_result = str(s.get('result', '')).strip().upper()
+            # Normalise VTU result codes — anything that isn't P or F is
+            # treated as a non-attempt (Absent, Withheld, Not Eligible, etc.)
+            NON_ATTEMPT = {'A', 'AB', 'W', 'X', 'NE', 'NA', '-', ''}
+            if raw_result in NON_ATTEMPT:
+                norm_result = raw_result if raw_result else 'A'
+            else:
+                norm_result = raw_result  # P or F as-is
             enriched_subjects.append({
                 **s,
-                'code': code,
-                'credit': credit, 'creditDefined': is_defined,
+                'code':   code,
+                'result': norm_result,
+                'credit': credit,
+                'creditDefined': is_defined,
                 'needsReview': not is_defined,
                 'reviewReason': None if is_defined else
                     'Credit not yet defined for this subject — add it in Admin \u2192 Subjects.',
