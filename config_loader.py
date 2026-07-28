@@ -100,20 +100,9 @@ def get_subject_credits() -> dict:
 
 
 def upsert_subject_credit(code: str, name: str, credit: int, external_required=None):
-    """Admin adds/updates a subject's credit (also called automatically the
-    first time a human confirms a credit while saving a result).
-    external_required=None means "leave whatever was already set" — so the
-    automatic call from save-result never silently re-enables a flag the
-    admin had explicitly turned off for this subject.
-
-    IMPORTANT: writes only this one subject's own field via a Firestore
-    merge, rather than reading the whole subjects map and writing it back.
-    A read-modify-write-the-whole-map pattern is a race condition: if two
-    saves ever overlap (a double-click, a slow response, two different
-    serverless instances), the second write can silently wipe out subjects
-    the first write had just added, since it read an older snapshot of the
-    map before the first write landed. A field-level merge can't do that —
-    each subject only ever touches its own key."""
+    """Admin adds/updates a subject's credit. Uses a dot-path field-level
+    merge so only this one subject's key is touched — never overwrites
+    other subjects that were saved concurrently or by a different call."""
     code = (code or '').strip().upper()
     if not code or credit is None:
         return
@@ -121,20 +110,31 @@ def upsert_subject_credit(code: str, name: str, credit: int, external_required=N
     db = get_db()
     doc_ref = db.collection(COL_CONFIG).document(DOC_SUBJECT_CREDITS)
 
-    existing_name = ''
-    if external_required is None:
-        # Read fresh (not the TTL cache) — only to preserve THIS subject's
-        # own prior name/flag, never anyone else's.
-        snap = doc_ref.get()
-        existing = snap.to_dict().get('values', {}).get(code, {}) if snap.exists else {}
-        existing_name     = existing.get('name', '')
-        external_required = existing.get('externalRequired', True)
+    # Preserve the subject's existing name and externalRequired flag
+    # when called automatically from save-result (external_required=None).
+    existing_name     = name or ''
+    ext_req_val       = True
+    snap = doc_ref.get()
+    if snap.exists:
+        existing = snap.to_dict().get('values', {}).get(code, {})
+        if not name:
+            existing_name = existing.get('name', '')
+        if external_required is None:
+            ext_req_val = existing.get('externalRequired', True)
+        else:
+            ext_req_val = bool(external_required)
 
-    doc_ref.set({"values": {code: {
-        "name":             (name or existing_name).strip(),
-        "credit":           int(credit),
-        "externalRequired": bool(external_required),
-    }}}, merge=True)
+    # Write ONLY this subject's sub-fields using dot-path + merge=True.
+    # This is a true field-level write — other subjects are never touched.
+    doc_ref.set({
+        "values": {
+            code: {
+                "name":             existing_name.strip(),
+                "credit":           int(credit),
+                "externalRequired": ext_req_val,
+            }
+        }
+    }, merge=True)
     invalidate_cache()
 
 
@@ -186,27 +186,31 @@ def get_teacher_map(branch: str, semester: str) -> dict:
 
 
 def upsert_subject_teacher(branch: str, semester: str, code: str, teacher: str):
-    """Admin adds/updates a subject teacher assignment."""
+    """Admin adds/updates a subject teacher assignment.
+    Uses dot-path field-level merge so only this one key is touched."""
     key = _teacher_key(branch, semester, code)
-    all_teachers = get_subject_teachers_all()
-    all_teachers[key] = {
-        'branch':   branch.strip(),
-        'semester': semester.strip(),
-        'code':     code.strip().upper(),
-        'teacher':  teacher.strip(),
-    }
     from firebase_init import get_db
-    get_db().collection(COL_CONFIG).document(DOC_SUBJECT_TEACHERS).set({"values": all_teachers})
+    get_db().collection(COL_CONFIG).document(DOC_SUBJECT_TEACHERS).set({
+        "values": {
+            key: {
+                'branch':   branch.strip(),
+                'semester': semester.strip(),
+                'code':     code.strip().upper(),
+                'teacher':  teacher.strip(),
+            }
+        }
+    }, merge=True)
     invalidate_cache()
 
 
 def delete_subject_teacher(branch: str, semester: str, code: str):
-    """Admin removes a teacher assignment."""
+    """Admin removes a teacher assignment using a dot-path delete."""
     key = _teacher_key(branch, semester, code)
-    all_teachers = get_subject_teachers_all()
-    all_teachers.pop(key, None)
     from firebase_init import get_db
-    get_db().collection(COL_CONFIG).document(DOC_SUBJECT_TEACHERS).set({"values": all_teachers})
+    from firebase_admin import firestore
+    get_db().collection(COL_CONFIG).document(DOC_SUBJECT_TEACHERS).update({
+        f"values.{key}": firestore.DELETE_FIELD
+    })
     invalidate_cache()
 
 
