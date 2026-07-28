@@ -152,7 +152,7 @@ function setupBookmarklet() {
 }
 
 /* ==================== BOOKMARKLET IMPORT ==================== */
-function loadImportedFromBookmarklet() {
+async function loadImportedFromBookmarklet() {
   const params = new URLSearchParams(window.location.search);
   const encoded = params.get('imported');
   if (!encoded) return;
@@ -163,6 +163,24 @@ function loadImportedFromBookmarklet() {
   } catch (e) {
     console.error('Failed to parse imported data:', e);
     return;
+  }
+
+  // ── Enrich subjects with credits from DB (same as PDF parse does) ───────
+  if (d.subjects && d.subjects.length > 0) {
+    try {
+      const res = await fetch('/api/resolve-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ usn: d.usn, subjects: d.subjects }),
+      });
+      const enriched = await res.json();
+      if (enriched.success) {
+        d.subjects = enriched.subjects;   // replace with enriched (has creditDefined)
+        if (enriched.branch && !d.branch) d.branch = enriched.branch;
+      }
+    } catch (err) {
+      console.warn('Failed to enrich subjects with credits:', err);
+    }
   }
 
   if (!isEditMode) enterEditMode();
@@ -180,7 +198,13 @@ function loadImportedFromBookmarklet() {
     }
   }
 
-  ['usn', 'studentName', 'semester'].forEach(id => {
+  // If server returned branch from resolve-import, use it
+  if (d.branch) {
+    const branchInput = document.getElementById('branch');
+    if (!branchInput.value.trim()) branchInput.value = d.branch;
+  }
+
+  ['usn', 'studentName', 'semester', 'branch'].forEach(id => {
     const val = document.getElementById(id).value.trim();
     const el  = document.getElementById(`view-${id}`);
     if (el) { el.textContent = val || '—'; el.classList.toggle('is-empty', !val); }
