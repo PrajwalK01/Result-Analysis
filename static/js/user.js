@@ -1298,8 +1298,13 @@ async function deleteStudentResult(usn) {
   }
 }
 
-/* ==================== CSV DOWNLOAD ==================== */
+/* ==================== EXCEL DOWNLOAD (2 sheets) ==================== */
 function downloadCSV() {
+  if (typeof XLSX === 'undefined') {
+    alert('Excel library not loaded yet — please wait a moment and try again.');
+    return;
+  }
+
   const branch       = document.getElementById('filterBranch').value;
   const semester     = document.getElementById('filterSemester').value;
   const academicYear = document.getElementById('filterYear').value;
@@ -1310,10 +1315,17 @@ function downloadCSV() {
 
   if (!students.length) return;
 
-  const lines = [];
-  const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;  // CSV-safe quote
+  const wb = XLSX.utils.book_new();
 
-  // ── SECTION 1: Summary Stats ──────────────────────────────────────────────
+  // ── Helper: push a blank row then a bold-style section title ─────────────
+  // SheetJS doesn't support cell styles in the free build, so we use
+  // an ALL-CAPS label row to visually separate sections.
+
+  // ════════════════════════════════════════════════════════════════════════
+  // SHEET 1 — Summary  (Overall + Class Distribution + Toppers + Subject-wise)
+  // ════════════════════════════════════════════════════════════════════════
+  const s1 = [];   // array of arrays
+
   const total     = students.length;
   const passCount = students.filter(s => s.classAwarded !== 'NC').length;
   const failCount = total - passCount;
@@ -1323,41 +1335,43 @@ function downloadCSV() {
   const sc        = students.filter(s => s.classAwarded === 'SC').length;
   const nc        = students.filter(s => s.classAwarded === 'NC').length;
 
-  lines.push(q(`Result Analysis Export`));
-  lines.push(q(`Branch: ${branch} | Semester: ${semester} | Year: ${academicYear}`));
-  lines.push('');
+  // Header info
+  s1.push([`Result Analysis`]);
+  s1.push([`Branch: ${branch}`, `Semester: ${semester}`, `Year: ${academicYear}`]);
+  s1.push([]);
 
-  lines.push(q('OVERALL SUMMARY'));
-  lines.push(['Metric', 'Value'].map(q).join(','));
-  lines.push([q('Total Students'),  total].join(','));
-  lines.push([q('Passed'),          passCount].join(','));
-  lines.push([q('NC / Failed'),     failCount].join(','));
-  lines.push([q('Overall Pass %'),  `${passPct}%`].join(','));
-  lines.push('');
+  // Overall Summary
+  s1.push(['OVERALL SUMMARY']);
+  s1.push(['Metric', 'Value']);
+  s1.push(['Total Students',   total]);
+  s1.push(['Passed',           passCount]);
+  s1.push(['NC / Failed',      failCount]);
+  s1.push(['Overall Pass %',   `${passPct}%`]);
+  s1.push([]);
 
-  // ── SECTION 2: Class Distribution ────────────────────────────────────────
-  lines.push(q('CLASS DISTRIBUTION'));
-  lines.push(['Class', 'Count'].map(q).join(','));
-  lines.push([q('FCD (≥75%)'), fcd].join(','));
-  lines.push([q('FC  (≥60%)'), fc ].join(','));
-  lines.push([q('SC  (≥45%)'), sc ].join(','));
-  lines.push([q('NC  (Failed)'), nc].join(','));
-  lines.push('');
+  // Class Distribution
+  s1.push(['CLASS DISTRIBUTION']);
+  s1.push(['Class', 'Count']);
+  s1.push(['FCD (≥75%)', fcd]);
+  s1.push(['FC  (≥60%)', fc]);
+  s1.push(['SC  (≥45%)', sc]);
+  s1.push(['NC  (Failed)', nc]);
+  s1.push([]);
 
-  // ── SECTION 3: Toppers ────────────────────────────────────────────────────
-  const topN    = CFG.appSettings.toppersCount || 3;
-  const ranked  = [...students].sort((a, b) =>
+  // Toppers
+  const topN   = CFG.appSettings.toppersCount || 3;
+  const ranked = [...students].sort((a, b) =>
     b.totalCreditPoints - a.totalCreditPoints || b.sumTotal - a.sumTotal
   );
-  lines.push(q('TOPPERS'));
-  lines.push(['Rank', 'USN', 'Student Name', 'Total Marks', 'Total GP', 'SGPA', 'Percentage %', 'Class'].map(q).join(','));
+  s1.push(['TOPPERS']);
+  s1.push(['Rank', 'USN', 'Student Name', 'Total Marks', 'Total GP', 'SGPA', 'Percentage %', 'Class']);
   ranked.slice(0, topN).forEach((s, i) => {
-    lines.push([i + 1, q(s.usn), q(s.studentName), s.sumTotal,
-                s.totalCreditPoints, s.sgpa, `${s.percentage}%`, q(s.classAwarded)].join(','));
+    s1.push([i + 1, s.usn, s.studentName, s.sumTotal,
+             s.totalCreditPoints, s.sgpa, `${s.percentage}%`, s.classAwarded]);
   });
-  lines.push('');
+  s1.push([]);
 
-  // ── SECTION 4: Subject-wise Analysis ─────────────────────────────────────
+  // Subject-wise Analysis
   const subMap2 = {};
   students.forEach(s => {
     (s.subjects || []).forEach(sub => {
@@ -1366,30 +1380,44 @@ function downloadCSV() {
       if (sub.result === 'P') subMap2[sub.code].pass += 1;
     });
   });
-  lines.push(q('SUBJECT-WISE ANALYSIS'));
-  lines.push(['Subject Code', 'Subject Name', 'Total Students', 'Pass', 'Fail', 'Pass %'].map(q).join(','));
+  s1.push(['SUBJECT-WISE ANALYSIS']);
+  s1.push(['Subject Code', 'Subject Name', 'Total Students', 'Pass', 'Fail', 'Pass %']);
   Object.entries(subMap2).forEach(([code, m]) => {
     const fail    = m.count - m.pass;
-    const passPct = ((m.pass / m.count) * 100).toFixed(1);
-    lines.push([q(code), q(m.name), m.count, m.pass, fail, `${passPct}%`].join(','));
+    const pct     = ((m.pass / m.count) * 100).toFixed(1);
+    s1.push([code, m.name, m.count, m.pass, fail, `${pct}%`]);
   });
-  lines.push('');
 
-  // ── SECTION 5: All Students (full result sheet with TGP) ─────────────────
-  lines.push(q('ALL STUDENTS — FULL RESULT SHEET'));
+  const ws1 = XLSX.utils.aoa_to_sheet(s1);
+  // Set column widths for readability
+  ws1['!cols'] = [{ wch: 28 }, { wch: 14 }, { wch: 28 }, { wch: 14 },
+                  { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 12 }];
+  XLSX.utils.book_append_sheet(wb, ws1, 'Summary');
+
+  // ════════════════════════════════════════════════════════════════════════
+  // SHEET 2 — All Students  (full result sheet with In/Ex/Tot/Re/GP/TGP)
+  // ════════════════════════════════════════════════════════════════════════
+  const s2 = [];
+
+  s2.push([`All Students — Full Result Sheet`]);
+  s2.push([`Branch: ${branch}`, `Semester: ${semester}`, `Year: ${academicYear}`]);
+  s2.push([]);
+
+  // Row 1: group-level header (Subject 1, Subject 2 … + tail cols)
   const hRow1 = ['Sl No', 'USN', 'Student Name'];
-  const hRow2 = ['', '', ''];
   subOrder.forEach((code, si) => {
-    const label = `Subject ${si + 1} (${subNames[code]})`;
-    hRow1.push(label, '', '', '', '', '');        // 6 sub-cols
-    hRow2.push('In', 'Ex', 'Tot', 'Re', 'GP', 'TGP');
+    hRow1.push(`Subject ${si + 1} — ${subNames[code]}`, '', '', '', '', '');
   });
   hRow1.push('Total Marks', 'Total GP', 'SGPA', 'Percentage %', 'Class Awarded');
+  s2.push(hRow1);
+
+  // Row 2: sub-column labels (In / Ex / Tot / Re / GP / TGP)
+  const hRow2 = ['', '', ''];
+  subOrder.forEach(() => hRow2.push('In', 'Ex', 'Tot', 'Re', 'GP', 'TGP'));
   hRow2.push('', '', '', '', '');
+  s2.push(hRow2);
 
-  lines.push(hRow1.map(q).join(','));
-  lines.push(hRow2.map(q).join(','));
-
+  // Data rows
   const sorted = [...students].sort((a, b) => (a.usn || '').localeCompare(b.usn || ''));
   sorted.forEach((s, i) => {
     const sm = {};
@@ -1399,27 +1427,31 @@ function downloadCSV() {
     subOrder.forEach(code => {
       const sub = sm[code];
       if (sub) {
-        const gp    = sub.grade !== undefined ? sub.grade : (sub.gradePoint || 0);
-        const tgp   = gp * (sub.credit || 0);
+        const gp  = sub.grade !== undefined ? sub.grade : (sub.gradePoint || 0);
+        const tgp = gp * (sub.credit || 0);
         row.push(sub.internal, sub.external, sub.total, sub.result, gp, tgp);
       } else {
-        row.push('—', '—', '—', '—', '—', '—');
+        row.push('', '', '', '', '', '');
       }
     });
     row.push(s.sumTotal, s.totalCreditPoints, s.sgpa, `${s.percentage}%`, s.classAwarded);
-
-    lines.push(row.map((v, ci) => (ci === 2 ? q(v) : v)).join(','));
+    s2.push(row);
   });
 
-  // ── Write file ────────────────────────────────────────────────────────────
-  const csv  = lines.join('\n');
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
-  a.download = `results_${branch}_${semester}_${academicYear}.csv`.replace(/\s+/g, '_');
-  a.click();
-  URL.revokeObjectURL(url);
+  const ws2 = XLSX.utils.aoa_to_sheet(s2);
+  // Fixed col widths: Sl(5), USN(14), Name(24), then 6 per subject, then 5 tail cols
+  const w2cols = [{ wch: 5 }, { wch: 14 }, { wch: 24 }];
+  subOrder.forEach(() => {
+    w2cols.push({ wch: 5 }, { wch: 5 }, { wch: 5 }, { wch: 4 }, { wch: 4 }, { wch: 5 });
+  });
+  [12, 10, 8, 12, 14].forEach(w => w2cols.push({ wch: w }));
+  ws2['!cols'] = w2cols;
+
+  XLSX.utils.book_append_sheet(wb, ws2, 'All Students');
+
+  // ── Write the workbook ────────────────────────────────────────────────────
+  const fileName = `results_${branch}_${semester}_${academicYear}.xlsx`.replace(/\s+/g, '_');
+  XLSX.writeFile(wb, fileName);
 }
 
 function renderSubjectAnalysis(students, teacherMap) {
