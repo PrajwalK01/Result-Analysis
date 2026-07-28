@@ -1066,10 +1066,10 @@ function renderAllStudents(students) {
     row1.appendChild(th);
   });
 
-  // Subject group headers — each spans 5 sub-cols
+  // Subject group headers — each spans 6 sub-cols (In, Ex, Tot, Re, GP, TGP)
   subjectOrder.forEach((code, si) => {
     const th = document.createElement('th');
-    th.colSpan = 5;
+    th.colSpan = 6;
     th.textContent = `Subject ${si + 1} — ${subjectNames[code]}`;
     th.className = `subj-hdr-${si % 8}`;
     row1.appendChild(th);
@@ -1092,10 +1092,10 @@ function renderAllStudents(students) {
   row1.appendChild(thAct);
   thead.appendChild(row1);
 
-  // Row 2: sub-column headers (In / Ex / Tot / Re / GP) for each subject
+  // Row 2: sub-column headers (In / Ex / Tot / Re / GP / TGP) for each subject
   const row2 = document.createElement('tr');
   subjectOrder.forEach((_, si) => {
-    ['In', 'Ex', 'Tot', 'Re', 'GP'].forEach(label => {
+    ['In', 'Ex', 'Tot', 'Re', 'GP', 'TGP'].forEach(label => {
       const th = document.createElement('th');
       th.textContent = label;
       th.className = `subj-hdr-${si % 8}`;
@@ -1135,12 +1135,15 @@ function renderAllStudents(students) {
       if (sub) {
         const isPass = sub.result === 'P';
         const gp     = sub.grade !== undefined ? sub.grade : (sub.gradePoint || 0);
+        const credit = sub.credit || 0;
+        const tgp    = gp * credit;   // TGP = Grade Points × Credits
         [
           { val: sub.internal,  style: '' },
           { val: sub.external,  style: '' },
           { val: sub.total,     style: 'font-weight:600' },
           { val: sub.result,    isResult: true, pass: isPass },
           { val: gp,            style: isPass ? 'color:var(--accent-2)' : 'color:var(--danger)' },
+          { val: tgp,           style: 'font-weight:600;color:var(--muted)' },
         ].forEach(col => {
           const td = document.createElement('td');
           if (col.isResult) {
@@ -1152,7 +1155,7 @@ function renderAllStudents(students) {
           tr.appendChild(td);
         });
       } else {
-        for (let k = 0; k < 5; k++) {
+        for (let k = 0; k < 6; k++) {   // 6 cols now
           const td = document.createElement('td');
           td.textContent = '—';
           td.style.color = 'var(--muted)';
@@ -1301,50 +1304,116 @@ function downloadCSV() {
   const semester     = document.getElementById('filterSemester').value;
   const academicYear = document.getElementById('filterYear').value;
 
-  const students    = window._lastAnalysisStudents || [];
-  const subOrder    = window._lastAnalysisSubjectOrder || [];
-  const subNames    = window._lastAnalysisSubjectNames || {};
+  const students = window._lastAnalysisStudents     || [];
+  const subOrder = window._lastAnalysisSubjectOrder || [];
+  const subNames = window._lastAnalysisSubjectNames || {};
 
   if (!students.length) return;
 
-  // Build header rows
-  const row1 = ['Sl No', 'USN', 'Student Name'];
-  const row2 = ['', '', ''];
+  const lines = [];
+  const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;  // CSV-safe quote
+
+  // ── SECTION 1: Summary Stats ──────────────────────────────────────────────
+  const total     = students.length;
+  const passCount = students.filter(s => s.classAwarded !== 'NC').length;
+  const failCount = total - passCount;
+  const passPct   = total > 0 ? ((passCount / total) * 100).toFixed(1) : '0.0';
+  const fcd       = students.filter(s => s.classAwarded === 'FCD').length;
+  const fc        = students.filter(s => s.classAwarded === 'FC').length;
+  const sc        = students.filter(s => s.classAwarded === 'SC').length;
+  const nc        = students.filter(s => s.classAwarded === 'NC').length;
+
+  lines.push(q(`Result Analysis Export`));
+  lines.push(q(`Branch: ${branch} | Semester: ${semester} | Year: ${academicYear}`));
+  lines.push('');
+
+  lines.push(q('OVERALL SUMMARY'));
+  lines.push(['Metric', 'Value'].map(q).join(','));
+  lines.push([q('Total Students'),  total].join(','));
+  lines.push([q('Passed'),          passCount].join(','));
+  lines.push([q('NC / Failed'),     failCount].join(','));
+  lines.push([q('Overall Pass %'),  `${passPct}%`].join(','));
+  lines.push('');
+
+  // ── SECTION 2: Class Distribution ────────────────────────────────────────
+  lines.push(q('CLASS DISTRIBUTION'));
+  lines.push(['Class', 'Count'].map(q).join(','));
+  lines.push([q('FCD (≥75%)'), fcd].join(','));
+  lines.push([q('FC  (≥60%)'), fc ].join(','));
+  lines.push([q('SC  (≥45%)'), sc ].join(','));
+  lines.push([q('NC  (Failed)'), nc].join(','));
+  lines.push('');
+
+  // ── SECTION 3: Toppers ────────────────────────────────────────────────────
+  const topN    = CFG.appSettings.toppersCount || 3;
+  const ranked  = [...students].sort((a, b) =>
+    b.totalCreditPoints - a.totalCreditPoints || b.sumTotal - a.sumTotal
+  );
+  lines.push(q('TOPPERS'));
+  lines.push(['Rank', 'USN', 'Student Name', 'Total Marks', 'Total GP', 'SGPA', 'Percentage %', 'Class'].map(q).join(','));
+  ranked.slice(0, topN).forEach((s, i) => {
+    lines.push([i + 1, q(s.usn), q(s.studentName), s.sumTotal,
+                s.totalCreditPoints, s.sgpa, `${s.percentage}%`, q(s.classAwarded)].join(','));
+  });
+  lines.push('');
+
+  // ── SECTION 4: Subject-wise Analysis ─────────────────────────────────────
+  const subMap2 = {};
+  students.forEach(s => {
+    (s.subjects || []).forEach(sub => {
+      if (!subMap2[sub.code]) subMap2[sub.code] = { name: sub.name, count: 0, pass: 0 };
+      subMap2[sub.code].count += 1;
+      if (sub.result === 'P') subMap2[sub.code].pass += 1;
+    });
+  });
+  lines.push(q('SUBJECT-WISE ANALYSIS'));
+  lines.push(['Subject Code', 'Subject Name', 'Total Students', 'Pass', 'Fail', 'Pass %'].map(q).join(','));
+  Object.entries(subMap2).forEach(([code, m]) => {
+    const fail    = m.count - m.pass;
+    const passPct = ((m.pass / m.count) * 100).toFixed(1);
+    lines.push([q(code), q(m.name), m.count, m.pass, fail, `${passPct}%`].join(','));
+  });
+  lines.push('');
+
+  // ── SECTION 5: All Students (full result sheet with TGP) ─────────────────
+  lines.push(q('ALL STUDENTS — FULL RESULT SHEET'));
+  const hRow1 = ['Sl No', 'USN', 'Student Name'];
+  const hRow2 = ['', '', ''];
   subOrder.forEach((code, si) => {
     const label = `Subject ${si + 1} (${subNames[code]})`;
-    row1.push(label, '', '', '', '');
-    row2.push('In', 'Ex', 'Tot', 'Re', 'GP');
+    hRow1.push(label, '', '', '', '', '');        // 6 sub-cols
+    hRow2.push('In', 'Ex', 'Tot', 'Re', 'GP', 'TGP');
   });
-  row1.push('Total Marks', 'Total GP', 'SGPA', 'Percentage %', 'Class Awarded');
-  row2.push('', '', '', '', '');
+  hRow1.push('Total Marks', 'Total GP', 'SGPA', 'Percentage %', 'Class Awarded');
+  hRow2.push('', '', '', '', '');
 
-  const lines = [
-    `"Result Analysis – Branch: ${branch} | Semester: ${semester} | Year: ${academicYear}"`,
-    row1.map(v => `"${v}"`).join(','),
-    row2.map(v => `"${v}"`).join(','),
-  ];
+  lines.push(hRow1.map(q).join(','));
+  lines.push(hRow2.map(q).join(','));
 
-  students.forEach((s, i) => {
-    const subMap = {};
-    (s.subjects || []).forEach(sub => { subMap[sub.code] = sub; });
+  const sorted = [...students].sort((a, b) => (a.usn || '').localeCompare(b.usn || ''));
+  sorted.forEach((s, i) => {
+    const sm = {};
+    (s.subjects || []).forEach(sub => { sm[sub.code] = sub; });
 
     const row = [i + 1, s.usn, s.studentName];
     subOrder.forEach(code => {
-      const sub = subMap[code];
+      const sub = sm[code];
       if (sub) {
-        const gp = sub.grade !== undefined ? sub.grade : sub.gradePoint || 0;
-        row.push(sub.internal, sub.external, sub.total, sub.result, gp);
+        const gp    = sub.grade !== undefined ? sub.grade : (sub.gradePoint || 0);
+        const tgp   = gp * (sub.credit || 0);
+        row.push(sub.internal, sub.external, sub.total, sub.result, gp, tgp);
       } else {
-        row.push('—', '—', '—', '—', '—');
+        row.push('—', '—', '—', '—', '—', '—');
       }
     });
     row.push(s.sumTotal, s.totalCreditPoints, s.sgpa, `${s.percentage}%`, s.classAwarded);
 
-    lines.push(row.map((v, ci) => ci === 2 ? `"${v}"` : v).join(','));
+    lines.push(row.map((v, ci) => (ci === 2 ? q(v) : v)).join(','));
   });
 
+  // ── Write file ────────────────────────────────────────────────────────────
   const csv  = lines.join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href     = url;
