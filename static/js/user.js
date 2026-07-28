@@ -960,7 +960,16 @@ async function loadAnalysis() {
   }
 }
 
+// Store current dashboard filter context so edit/delete can reference it
+let _dashCtx = { branch: '', semester: '', academicYear: '' };
+
 function renderDashboard(students, teacherMap) {
+  // Capture filter context for edit/delete actions
+  _dashCtx = {
+    branch:       document.getElementById('filterBranch').value,
+    semester:     document.getElementById('filterSemester').value,
+    academicYear: document.getElementById('filterYear').value,
+  };
   document.getElementById('dashResults').classList.remove('hidden');
   document.getElementById('downloadCSVBtn').classList.remove('hidden');
 
@@ -1074,6 +1083,13 @@ function renderAllStudents(students) {
     th.className = 'tail-hdr';
     row1.appendChild(th);
   });
+
+  // Actions column header — rowSpan=2
+  const thAct = document.createElement('th');
+  thAct.rowSpan = 2;
+  thAct.textContent = 'Actions';
+  thAct.className = 'tail-hdr';
+  row1.appendChild(thAct);
   thead.appendChild(row1);
 
   // Row 2: sub-column headers (In / Ex / Tot / Re / GP) for each subject
@@ -1160,12 +1176,123 @@ function renderAllStudents(students) {
       tr.appendChild(td);
     });
 
+    // Actions cell — Edit + Delete
+    const tdAct = document.createElement('td');
+    tdAct.style.whiteSpace = 'nowrap';
+    tdAct.innerHTML = `
+      <button class="btn btn--secondary btn--sm dash-edit-btn"
+        style="margin-right:4px"
+        data-usn="${s.usn}">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+          <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+        </svg>
+        Edit
+      </button>
+      <button class="btn btn--danger btn--sm dash-del-btn"
+        data-usn="${s.usn}">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="3 6 5 6 21 6"/>
+          <path d="M19 6l-1 14H6L5 6"/>
+          <path d="M10 11v6"/><path d="M14 11v6"/>
+          <path d="M9 6V4h6v2"/>
+        </svg>
+        Delete
+      </button>`;
+    tr.appendChild(tdAct);
+
     tbody.appendChild(tr);
   });
+
+  // Wire Edit + Delete buttons after all rows are in the DOM
+  tbody.querySelectorAll('.dash-edit-btn').forEach(btn =>
+    btn.addEventListener('click', () => editStudentResult(btn.dataset.usn))
+  );
+  tbody.querySelectorAll('.dash-del-btn').forEach(btn =>
+    btn.addEventListener('click', () => deleteStudentResult(btn.dataset.usn))
+  );
 
   window._lastAnalysisStudents     = sorted;
   window._lastAnalysisSubjectOrder = subjectOrder;
   window._lastAnalysisSubjectNames = subjectNames;
+}
+
+/* ==================== DASHBOARD EDIT / DELETE ==================== */
+async function editStudentResult(usn) {
+  const { branch, semester, academicYear } = _dashCtx;
+  try {
+    const params = new URLSearchParams({ branch, semester, academicYear, usn });
+    const res    = await fetch(`/api/get-result?${params}`);
+    const data   = await res.json();
+    if (!data.success) { alert(data.error); return; }
+
+    const r = data.result;
+
+    // Switch to Upload tab and enter edit mode
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('tab--active'));
+    document.querySelector('[data-tab="upload"]').classList.add('tab--active');
+    document.getElementById('uploadPanel').classList.remove('hidden');
+    document.getElementById('dashboardPanel').classList.add('hidden');
+
+    if (!isEditMode) enterEditMode();
+
+    // Fill student details
+    const fields = { branch: r.branch, semester: r.semester,
+                     academicYear: r.academicYear, usn: r.usn, studentName: r.studentName };
+    Object.entries(fields).forEach(([id, val]) => {
+      const el = document.getElementById(id);
+      if (el) el.value = val || '';
+    });
+
+    // Sync view fields
+    ['branch','semester','academicYear','usn','studentName'].forEach(id => {
+      const val = document.getElementById(id).value.trim();
+      const view = document.getElementById(`view-${id}`);
+      if (view) { view.textContent = val || '—'; view.classList.toggle('is-empty', !val); }
+    });
+
+    // Fill subject rows
+    document.getElementById('subjectRows').innerHTML = '';
+    subjectCount = 0;
+    (r.subjects || []).forEach(s => {
+      addSubjectRow({
+        code:        s.code,
+        name:        s.name,
+        credit:      s.credit,
+        creditLocked: s.credit > 0,
+        internal:    s.internal,
+        external:    s.external,
+      });
+    });
+
+    recalcSummary();
+
+    const msgEl = document.getElementById('uploadMsg');
+    showMsg(msgEl, `✓ Loaded ${r.usn} for editing. Make changes and click Save Result to update.`, 'ok');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+  } catch (e) {
+    alert(`Error loading result: ${e.message}`);
+  }
+}
+
+async function deleteStudentResult(usn) {
+  const { branch, semester, academicYear } = _dashCtx;
+  if (!confirm(`Delete result for ${usn}?\n\nBranch: ${branch} | Semester: ${semester} | Year: ${academicYear}\n\nThis cannot be undone.`)) return;
+
+  try {
+    const params = new URLSearchParams({ branch, semester, academicYear, usn });
+    const res    = await fetch(`/api/delete-result?${params}`, { method: 'DELETE' });
+    const data   = await res.json();
+    if (data.success) {
+      // Refresh the dashboard with the same filters
+      loadAnalysis();
+    } else {
+      alert(data.error || 'Delete failed.');
+    }
+  } catch (e) {
+    alert(`Error deleting result: ${e.message}`);
+  }
 }
 
 /* ==================== CSV DOWNLOAD ==================== */
@@ -1250,6 +1377,7 @@ function renderSubjectAnalysis(students, teacherMap) {
       <td style="font-family:monospace;font-size:12px">${code}</td>
       <td style="text-align:left">${m.name}</td>
       <td style="text-align:left;color:var(--accent-2)">${teacher}</td>
+      <td style="font-weight:600">${m.count}</td>
       <td style="color:var(--accent-2);font-weight:600">${m.pass}</td>
       <td style="color:var(--danger);font-weight:600">${fail}</td>
       <td>${passPct}%</td>

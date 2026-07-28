@@ -658,3 +658,60 @@ def resolve_import():
         return jsonify({'success': True, 'branch': branch, 'subjects': enriched_subjects})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ── API: delete result ────────────────────────────────────────────────────────
+
+@user_bp.route('/api/delete-result', methods=['DELETE'])
+@login_required
+def delete_result():
+    """Delete a single student result document."""
+    branch        = request.args.get('branch',        '').strip()
+    semester      = request.args.get('semester',      '').strip()
+    academic_year = request.args.get('academicYear',  '').strip()
+    usn           = request.args.get('usn',           '').strip().upper()
+
+    if not branch or not semester or not academic_year or not usn:
+        return jsonify({'success': False, 'error': 'branch, semester, academicYear and usn are required'}), 400
+
+    try:
+        def _slug(s):
+            return re.sub(r'[^A-Za-z0-9]+', '', str(s)).upper()
+
+        collection_name = _results_collection(academic_year, semester, branch)
+        doc_id  = _slug(usn)
+        doc_ref = get_db().collection(collection_name).document(doc_id)
+        if not doc_ref.get().exists:
+            return jsonify({'success': False, 'error': 'Result not found'}), 404
+        doc_ref.delete()
+        return jsonify({'success': True, 'message': f'Result for {usn} deleted.'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ── API: get single result (for edit prefill) ─────────────────────────────────
+
+@user_bp.route('/api/get-result', methods=['GET'])
+@login_required
+def get_result():
+    """Fetch a single student result document for editing."""
+    branch        = request.args.get('branch',        '').strip()
+    semester      = request.args.get('semester',      '').strip()
+    academic_year = request.args.get('academicYear',  '').strip()
+    usn           = request.args.get('usn',           '').strip().upper()
+
+    if not branch or not semester or not academic_year or not usn:
+        return jsonify({'success': False, 'error': 'branch, semester, academicYear and usn are required'}), 400
+
+    try:
+        def _slug(s):
+            return re.sub(r'[^A-Za-z0-9]+', '', str(s)).upper()
+
+        collection_name = _results_collection(academic_year, semester, branch)
+        doc_ref = get_db().collection(collection_name).document(_slug(usn))
+        doc = doc_ref.get()
+        if not doc.exists:
+            return jsonify({'success': False, 'error': 'Result not found'}), 404
+        return jsonify({'success': True, 'result': doc.to_dict()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500

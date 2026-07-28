@@ -125,22 +125,42 @@ function renderTable() {
       <td><span class="code-pill">${s.code}</span></td>
       <td><span class="credit-badge">${s.credit}</span></td>
       <td>${s.externalRequired ? 'Required' : 'Not required'}</td>
-      <td>
+      <td style="white-space:nowrap">
+        <button class="btn btn--secondary btn--sm" data-edit-code="${s.code}" style="margin-right:4px">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+            <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg> Edit
+        </button>
         <button class="btn btn--danger btn--sm" data-code="${s.code}">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
             <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
-          </svg>
-          Remove
+          </svg> Remove
         </button>
       </td>
     `;
     tbody.appendChild(tr);
   });
 
+  tbody.querySelectorAll('button[data-edit-code]').forEach(btn =>
+    btn.addEventListener('click', () => editSubject(btn.dataset.editCode))
+  );
   tbody.querySelectorAll('button[data-code]').forEach(btn =>
     btn.addEventListener('click', () => removeSubject(btn.dataset.code))
   );
+}
+
+function editSubject(code) {
+  const s = allSubjects.find(x => x.code === code);
+  if (!s) return;
+  document.getElementById('subjCode').value   = s.code;
+  document.getElementById('subjCredit').value = s.credit;
+  document.getElementById('subjExternalRequired').checked = !!s.externalRequired;
+  document.getElementById('subjCode').focus();
+  // Scroll form into view
+  document.querySelector('.admin-form-box').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  showMsg('adminMsg', `Editing ${s.code} — make changes and click Save Subject.`, 'ok');
 }
 
 function showMsg(id, text, type) {

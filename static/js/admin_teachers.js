@@ -148,25 +148,64 @@ function renderTable() {
       <td><span class="sem-pill">${t.semester}</span></td>
       <td><span class="code-pill">${t.code}</span></td>
       <td class="teacher-name">${t.teacher}</td>
-      <td>
+      <td style="white-space:nowrap">
+        <button class="btn btn--secondary btn--sm"
+          data-edit-branch="${t.branch}" data-edit-sem="${t.semester}" data-edit-code="${t.code}"
+          style="margin-right:4px">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+            <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg> Edit
+        </button>
         <button class="btn btn--danger btn--sm"
           data-branch="${t.branch}" data-sem="${t.semester}" data-code="${t.code}">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
             <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
-          </svg>
-          Remove
+          </svg> Remove
         </button>
       </td>
     `;
     tbody.appendChild(tr);
   });
 
+  tbody.querySelectorAll('button[data-edit-branch]').forEach(btn =>
+    btn.addEventListener('click', () =>
+      editTeacher(btn.dataset.editBranch, btn.dataset.editSem, btn.dataset.editCode)
+    )
+  );
   tbody.querySelectorAll('button[data-branch]').forEach(btn =>
     btn.addEventListener('click', () =>
       removeTeacher(btn.dataset.branch, btn.dataset.sem, btn.dataset.code)
     )
   );
+}
+
+function editTeacher(branch, semester, code) {
+  const t = allTeachers.find(x =>
+    x.branch === branch && x.semester === semester && x.code === code
+  );
+  if (!t) return;
+
+  // Populate form — selects need the value set after options exist
+  const branchSel   = document.getElementById('tchBranch');
+  const semesterSel = document.getElementById('tchSemester');
+
+  // If option doesn't exist yet (edge case), add it temporarily
+  if (![...branchSel.options].some(o => o.value === t.branch)) {
+    branchSel.add(new Option(t.branch, t.branch));
+  }
+  if (![...semesterSel.options].some(o => o.value === t.semester)) {
+    semesterSel.add(new Option(t.semester, t.semester));
+  }
+
+  branchSel.value   = t.branch;
+  semesterSel.value = t.semester;
+  document.getElementById('tchCode').value  = t.code;
+  document.getElementById('tchName').value  = t.teacher;
+
+  document.querySelector('.admin-form-box').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  showMsg('teacherMsg', `Editing teacher for ${t.code} (${t.branch} / ${t.semester}) — update and click Save Teacher.`, 'ok');
 }
 
 function showMsg(id, text, type) {
