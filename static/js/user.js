@@ -10,9 +10,11 @@ const API = {
 let CFG = {
   gradeScale:  [],   // [{min, max, grade, letter}] sorted high→low
   classAward:  [],   // [{min, class}] sorted high→low
-  scheme:      { maxMarksPerSubject: 100, maxInternalMarks: 50, maxExternalMarks: 100, maxCredit: 10 },
+  scheme:      { maxMarksPerSubject: 100, maxInternalMarks: 50, maxExternalMarks: 100, maxCredit: 10, minExternalPass: 18 },
   appSettings: { toppersCount: 3 },
   branchMap:   {},   // {USN_code: branch_name} — e.g. {"CS":"CSE","IS":"ISE",...}
+  subjectCreditsMap:   {},   // {subjectCode: credit} — set per-subject in Admin → Subjects
+  externalRequiredMap: {},   // {subjectCode: bool}   — set per-subject in Admin → Subjects
 };
 
 async function loadConfig() {
@@ -25,6 +27,8 @@ async function loadConfig() {
       CFG.scheme      = data.scheme      || CFG.scheme;
       CFG.appSettings = data.appSettings || CFG.appSettings;
       CFG.branchMap   = data.branchMap   || CFG.branchMap;
+      CFG.subjectCreditsMap   = data.subjectCredits          || CFG.subjectCreditsMap;
+      CFG.externalRequiredMap = data.subjectExternalRequired || CFG.externalRequiredMap;
     }
   } catch (e) {
     console.warn('Config fetch failed, using defaults:', e);
@@ -524,6 +528,47 @@ function getClassAwarded(hasFail, pct) {
   return 'NC';
 }
 
+// Mirrors the same rule enforced server-side in save_result(): unless the
+// admin has explicitly disabled it for this subject code (Admin → Subjects),
+// scoring below CFG.scheme.minExternalPass in external fails the subject
+// outright, even if internal+external together would otherwise pass.
+function applyExternalPassRule(code, external, gp, letter) {
+  const minExternal = (CFG.scheme && CFG.scheme.minExternalPass) || 18;
+  const requiresExternal = CFG.externalRequiredMap[code] !== undefined
+    ? CFG.externalRequiredMap[code]
+    : true;
+  if (requiresExternal && external < minExternal) {
+    return { gp: 0, letter: 'F' };
+  }
+  return { gp, letter };
+}
+
+// Runs whenever the subject-code field is edited by hand. If the admin has
+// already defined a credit for this code (Admin → Subjects), pull it in
+// automatically and lock the field — same treatment a PDF-parsed row gets.
+// If the code isn't recognised, unlock the field so the user can type a
+// credit in themselves.
+function autoFillCreditFromAdmin(id) {
+  const codeEl   = document.getElementById(`code-${id}`);
+  const creditEl = document.getElementById(`credit-${id}`);
+  if (!codeEl || !creditEl) return;
+
+  const code = codeEl.value.trim().toUpperCase();
+  const adminCredit = code ? CFG.subjectCreditsMap[code] : undefined;
+
+  if (adminCredit && adminCredit > 0) {
+    creditEl.value    = adminCredit;
+    creditEl.readOnly = true;
+    creditEl.title    = 'Credit set by Admin — cannot be changed';
+  } else {
+    creditEl.readOnly = false;
+    creditEl.title    = '';
+  }
+
+  syncTextCells(id);
+  recalcSummary();
+}
+
 /* ==================== SUBJECT ROWS ==================== */
 function addSubjectRow(prefill = {}) {
   subjectCount += 1;
@@ -585,10 +630,12 @@ function addSubjectRow(prefill = {}) {
 
   tbody.appendChild(tr);
 
+  const codeEl     = tr.querySelector(`#code-${id}`);
   const internalEl = tr.querySelector(`#internal-${id}`);
   const externalEl = tr.querySelector(`#external-${id}`);
   const creditEl   = tr.querySelector(`#credit-${id}`);
 
+  codeEl.addEventListener('blur', () => autoFillCreditFromAdmin(id));
   internalEl.addEventListener('input', () => recalcRow(id));
   externalEl.addEventListener('input', () => recalcRow(id));
   creditEl.addEventListener('input', recalcSummary);
@@ -633,8 +680,10 @@ function recalcRow(id) {
     gradeEl.textContent  = '—';
     resultEl.innerHTML   = '<span class="badge badge--na">—</span>';
   } else {
-    const gp     = getGradePoint(total);
-    const letter = getLetterGrade(total);
+    const code = document.getElementById(`code-${id}`).value.trim().toUpperCase();
+    let gp     = getGradePoint(total);
+    let letter = getLetterGrade(total);
+    ({ gp, letter } = applyExternalPassRule(code, external, gp, letter));
     totalEl.textContent  = total;
     gradeEl.innerHTML    = `${gp} <span style="font-size:11px;color:var(--muted);">(${letter})</span>`;
     resultEl.innerHTML   = gp > 0
@@ -663,8 +712,9 @@ function collectSubjects() {
     const internal = parseFloat(document.getElementById(`internal-${id}`).value) || 0;
     const external = parseFloat(document.getElementById(`external-${id}`).value) || 0;
     const total    = internal + external;
-    const grade        = getGradePoint(total);
-    const letterGrade  = getLetterGrade(total);
+    let grade        = getGradePoint(total);
+    let letterGrade  = getLetterGrade(total);
+    ({ gp: grade, letter: letterGrade } = applyExternalPassRule(code.toUpperCase(), external, grade, letterGrade));
     const result       = grade > 0 ? 'P' : 'F';
     const creditPoints = grade * credit;
 
