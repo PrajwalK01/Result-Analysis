@@ -69,7 +69,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // isEditMode is already false, so addSubjectRow will add the row in view mode.
   addSubjectRow();
 
-  loadImportedFromBookmarklet();
+  await loadImportedFromBookmarklet();
   setupBookmarklet();
   initDashboardCascade();
 });
