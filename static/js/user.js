@@ -192,8 +192,9 @@ function loadImportedFromBookmarklet() {
 
     d.subjects.forEach(s => {
       addSubjectRow({
-        code: s.code, name: s.name, credit: s.credit || '',
-        creditLocked: s.credit > 0,
+        code: s.code, name: s.name,
+        credit: s.creditDefined ? s.credit : '',
+        creditLocked: !!s.creditDefined,
         internal: s.internal, external: s.external,
       });
     });
@@ -339,8 +340,8 @@ async function parsePDF(file) {
         addSubjectRow({
           code:        s.code,
           name:        s.name,
-          credit:      s.credit || '',   // auto-filled if admin has defined this subject
-          creditLocked: s.credit > 0,    // lock it if admin already set it
+          credit:      s.creditDefined ? s.credit : '',   // auto-filled if admin has defined this subject
+          creditLocked: !!s.creditDefined,                // lock it if admin already set it (0 counts as set)
           internal:    s.internal,
           external:    s.external,
           needsReview: s.needsReview,
@@ -554,10 +555,10 @@ function autoFillCreditFromAdmin(id) {
   if (!codeEl || !creditEl) return;
 
   const code = codeEl.value.trim().toUpperCase();
-  const adminCredit = code ? CFG.subjectCreditsMap[code] : undefined;
+  const isDefined = !!code && Object.prototype.hasOwnProperty.call(CFG.subjectCreditsMap, code);
 
-  if (adminCredit && adminCredit > 0) {
-    creditEl.value    = adminCredit;
+  if (isDefined) {
+    creditEl.value    = CFG.subjectCreditsMap[code];   // may legitimately be 0
     creditEl.readOnly = true;
     creditEl.title    = 'Credit set by Admin — cannot be changed';
   } else {
@@ -601,7 +602,7 @@ function addSubjectRow(prefill = {}) {
 
     <!-- Credit column -->
     <td>
-      <input class="td-input td-input--num cell-input" type="number" id="credit-${id}" placeholder="4" min="0" max="10" value="${prefill.credit || ''}" ${prefill.creditLocked ? 'readonly title="Credit set by Admin — cannot be changed"' : ''}>
+      <input class="td-input td-input--num cell-input" type="number" id="credit-${id}" placeholder="4" min="0" max="10" value="${prefill.credit ?? ''}" ${prefill.creditLocked ? 'readonly title="Credit set by Admin — cannot be changed"' : ''}>
       <span class="cell-text hidden" id="txt-credit-${id}">—</span>
     </td>
 

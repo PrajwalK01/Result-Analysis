@@ -204,13 +204,13 @@ def _parse_subject_table(pdf) -> list:
                        ('P' if calc_grade(total)[0] > 0 else 'F'))
 
                 credit = credit_map.get(code, 0)
-                if credit == 0:
+                if code not in credit_map:
                     needs_review = True
                     reasons.append('Credit not yet defined for this subject — add it in Admin \u2192 Subjects.')
 
                 subjects.append({
                     'code': code, 'name': name.title(),
-                    'credit': credit,
+                    'credit': credit, 'creditDefined': code in credit_map,
                     'internal': internal, 'external': external,
                     'total': total, 'result': res,
                     'needsReview': needs_review,
@@ -346,7 +346,7 @@ def parse_vtu_pdf(file_bytes: bytes) -> dict:
                         reasons.append('Extracted values out of expected range — please verify.')
 
                     credit = credit_map.get(code, 0)
-                    if credit == 0:
+                    if code not in credit_map:
                         needs_review = True
                         reasons.append('Credit not yet defined for this subject — add it in Admin \u2192 Subjects.')
 
@@ -359,7 +359,7 @@ def parse_vtu_pdf(file_bytes: bytes) -> dict:
                     seen.add(code)
                     result['subjects'].append({
                         'code': code, 'name': name_part,
-                        'credit': credit,
+                        'credit': credit, 'creditDefined': code in credit_map,
                         'internal': internal, 'external': external,
                         'total': total, 'result': res_flag,
                         'needsReview': needs_review,
@@ -645,12 +645,13 @@ def resolve_import():
         for s in subjects:
             code = str(s.get('code', '')).strip().upper()
             credit = credit_map.get(code, 0)
+            is_defined = code in credit_map
             enriched_subjects.append({
                 **s,
                 'code': code,
-                'credit': credit,
-                'needsReview': credit == 0,
-                'reviewReason': None if credit else
+                'credit': credit, 'creditDefined': is_defined,
+                'needsReview': not is_defined,
+                'reviewReason': None if is_defined else
                     'Credit not yet defined for this subject — add it in Admin \u2192 Subjects.',
             })
 

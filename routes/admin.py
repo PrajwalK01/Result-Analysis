@@ -88,18 +88,21 @@ def upsert_subject():
     data = request.get_json(silent=True) or {}
     code = (data.get('code') or '').strip()
     name = (data.get('name') or '').strip()
-    credit = data.get('credit')
+    credit_raw = data.get('credit')
     # Admin form always sends this explicitly (checked/unchecked), so we
     # pass it through as a real bool rather than None — None is reserved
     # for the auto-upsert-on-save call, which should never touch this flag.
     external_required = bool(data.get('externalRequired', True))
 
-    if not code or not credit:
+    # credit=0 is a valid value (e.g. a non-credit/audit subject) — check
+    # for missing/blank input explicitly rather than `not credit_raw`,
+    # since that would also reject a legitimate "0".
+    if not code or credit_raw is None or str(credit_raw).strip() == '':
         return jsonify({'success': False, 'error': 'code and credit are both required'}), 400
     try:
-        credit = int(credit)
-        if credit <= 0 or credit > 10:
-            return jsonify({'success': False, 'error': 'Credit must be between 1 and 10'}), 400
+        credit = int(credit_raw)
+        if credit < 0 or credit > 4:
+            return jsonify({'success': False, 'error': 'Credit must be between 0 and 4'}), 400
     except ValueError:
         return jsonify({'success': False, 'error': 'Credit must be a number'}), 400
 

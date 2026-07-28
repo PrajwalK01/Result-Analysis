@@ -115,7 +115,7 @@ def upsert_subject_credit(code: str, name: str, credit: int, external_required=N
     map before the first write landed. A field-level merge can't do that —
     each subject only ever touches its own key."""
     code = (code or '').strip().upper()
-    if not code or not credit:
+    if not code or credit is None:
         return
     from firebase_init import get_db
     db = get_db()
