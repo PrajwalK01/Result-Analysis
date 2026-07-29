@@ -720,8 +720,9 @@ function recalcRow(id) {
   const internal = parseFloat(document.getElementById(`internal-${id}`).value) || 0;
   const external = parseFloat(document.getElementById(`external-${id}`).value) || 0;
   const total    = internal + external;
-  const hasData  = document.getElementById(`internal-${id}`).value !== '' ||
-                   document.getElementById(`external-${id}`).value !== '';
+  const internalBlank = document.getElementById(`internal-${id}`).value.trim() === '';
+  const externalBlank = document.getElementById(`external-${id}`).value.trim() === '';
+  const hasData  = !internalBlank || !externalBlank;  // at least one field has a value
 
   const totalEl  = document.getElementById(`total-${id}`);
   const gradeEl  = document.getElementById(`grade-${id}`);
@@ -739,9 +740,10 @@ function recalcRow(id) {
     gradeEl.textContent  = '—';
     resultEl.innerHTML   = '<span class="badge badge--na">—</span>';
   } else {
-    const code    = document.getElementById(`code-${id}`).value.trim().toUpperCase();
+    const code     = document.getElementById(`code-${id}`).value.trim().toUpperCase();
     const absentCb = document.getElementById(`absent-${id}`);
-    const isAbsent = absentCb && absentCb.checked;
+    // Auto-absent: both fields blank, OR checkbox ticked
+    const isAbsent = (absentCb && absentCb.checked) || (internalBlank && externalBlank);
 
     if (isAbsent) {
       totalEl.textContent = '—';
@@ -776,12 +778,20 @@ function collectSubjects() {
 
     const code     = document.getElementById(`code-${id}`).value.trim();
     const name     = document.getElementById(`name-${id}`).value.trim();
-    const credit   = parseFloat(document.getElementById(`credit-${id}`).value)   || 0;
-    const absentCb = document.getElementById(`absent-${id}`);
-    const isAbsent = absentCb && absentCb.checked;
+    const credit   = parseFloat(document.getElementById(`credit-${id}`).value) || 0;
+
+    const internalInput = document.getElementById(`internal-${id}`);
+    const externalInput = document.getElementById(`external-${id}`);
+    const absentCb      = document.getElementById(`absent-${id}`);
+
+    // A subject is absent when:
+    // 1. The absent checkbox is ticked, OR
+    // 2. BOTH internal AND external fields are completely blank (— in Total)
+    const internalBlank = !internalInput || internalInput.value.trim() === '';
+    const externalBlank = !externalInput || externalInput.value.trim() === '';
+    const isAbsent = (absentCb && absentCb.checked) || (internalBlank && externalBlank);
 
     if (isAbsent) {
-      // Absent — include in list so it's saved, but no marks/grade/credit points
       if (code) acc.push({
         code, name, credit, internal: 0, external: 0, total: 0,
         grade: 0, letterGrade: 'A', result: 'A', creditPoints: 0,
@@ -789,8 +799,8 @@ function collectSubjects() {
       return acc;
     }
 
-    const internal = parseFloat(document.getElementById(`internal-${id}`).value) || 0;
-    const external = parseFloat(document.getElementById(`external-${id}`).value) || 0;
+    const internal = parseFloat(internalInput.value) || 0;
+    const external = parseFloat(externalInput.value) || 0;
     const total    = internal + external;
     let grade        = getGradePoint(total);
     let letterGrade  = getLetterGrade(total);
