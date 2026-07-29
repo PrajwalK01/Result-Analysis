@@ -722,9 +722,16 @@ function recalcRow(id) {
   const total    = internal + external;
   const internalBlank = document.getElementById(`internal-${id}`).value.trim() === '';
   const externalBlank = document.getElementById(`external-${id}`).value.trim() === '';
-  // If external is blank the student was absent for the exam — treat whole subject as absent.
-  // Both blank also means absent. Only internal blank alone is a data issue (needsReview), not absent.
-  const hasData  = !externalBlank;   // external must have a value to be a valid attempt
+
+  // Check if this subject requires an external exam
+  const code = document.getElementById(`code-${id}`).value.trim().toUpperCase();
+  const requiresExternal = CFG.externalRequiredMap && CFG.externalRequiredMap[code] !== undefined
+    ? CFG.externalRequiredMap[code]
+    : true;   // default: external is required
+
+  // Absent when external is blank AND external is required for this subject.
+  // If external is not required (lab/Yoga), blank external just means 0 — not absent.
+  const hasData = !externalBlank || !requiresExternal;
 
   const totalEl  = document.getElementById(`total-${id}`);
   const gradeEl  = document.getElementById(`grade-${id}`);
@@ -789,10 +796,15 @@ function collectSubjects() {
 
     // A subject is absent when:
     // 1. The absent checkbox is ticked, OR
-    // 2. External field is blank — student may have internal marks but was
-    //    absent for the external exam (VTU shows result 'A' in this case)
+    // 2. External field is blank AND the subject requires an external exam.
+    //    Subjects with externalRequired=false (labs, Yoga, etc.) have no
+    //    external component — blank/0 external for them is normal, not absent.
     const externalBlank = !externalInput || externalInput.value.trim() === '';
-    const isAbsent = (absentCb && absentCb.checked) || externalBlank;
+    const subCode = code.toUpperCase();
+    const requiresExt = CFG.externalRequiredMap && CFG.externalRequiredMap[subCode] !== undefined
+      ? CFG.externalRequiredMap[subCode]
+      : true;   // default: external required
+    const isAbsent = (absentCb && absentCb.checked) || (externalBlank && requiresExt);
 
     if (isAbsent) {
       if (code) acc.push({
