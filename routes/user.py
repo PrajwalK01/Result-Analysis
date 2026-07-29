@@ -502,6 +502,9 @@ def save_result():
             name_val   = str(s.get('name', '')).strip()
             raw_result = str(s.get('result', '')).strip().upper()
             # A, AB, W, X, NE, NA, - = non-attempt (not pass, not fail)
+            # Safety net: if frontend sends F but both marks are 0 and result
+            # from VTU page was genuinely absent, the raw_result would be 'A'.
+            # We never auto-promote F→A here — only explicit 'A' codes are trusted.
             NON_ATTEMPT = {'A', 'AB', 'W', 'X', 'NE', 'NA', '-', ''}
             is_absent  = raw_result in NON_ATTEMPT
 
@@ -737,5 +740,78 @@ def get_result():
         if not doc.exists:
             return jsonify({'success': False, 'error': 'Result not found'}), 404
         return jsonify({'success': True, 'result': doc.to_dict()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ── API: fix-absent — migrate saved records where absent was stored as F ──────
+
+@user_bp.route('/api/fix-absent', methods=['POST'])
+@login_required
+def fix_absent():
+    """Scan all results for the given branch/semester/year and correct any
+    subject where result='F' but both internal AND external marks are 0,
+    which is the fingerprint of an absent subject saved before the fix.
+    Updates those subjects to result='A' and recomputes SGPA/percentage."""
+    data          = request.get_json(silent=True) or {}
+    branch        = data.get('branch',        '').strip()
+    semester      = data.get('semester',      '').strip()
+    academic_year = data.get('academicYear',  '').strip()
+
+    if not branch or not semester or not academic_year:
+        return jsonify({'success': False, 'error': 'branch, semester and academicYear required'}), 400
+
+    try:
+        collection_name = _results_collection(academic_year, semester, branch)
+        docs = list(get_db().collection(collection_name).stream())
+        fixed_students = 0
+        fixed_subjects = 0
+
+        for doc in docs:
+            record = doc.to_dict()
+            subjects = record.get('subjects', [])
+            changed = False
+
+            for sub in subjects:
+                # A subject is almost certainly absent (not just failed) when
+                # both internal AND external are 0 AND result is 'F'.
+                # We can't be 100% certain (a subject with 0+0 could be
+                # genuinely failed), but VTU never gives 0 internal to a
+                # student who sat the exam — so this is a reliable heuristic.
+                if (sub.get('result') == 'F'
+                        and sub.get('internal', -1) == 0
+                        and sub.get('external', -1) == 0):
+                    sub['result']       = 'A'
+                    sub['grade']        = 0
+                    sub['letterGrade']  = 'A'
+                    sub['creditPoints'] = 0
+                    changed = True
+                    fixed_subjects += 1
+
+            if changed:
+                # Recompute totals excluding absent subjects
+                appeared = [s for s in subjects if s.get('result') != 'A']
+                total_credits       = sum(s.get('credit', 0) for s in appeared)
+                total_credit_points = sum(s.get('creditPoints', 0) for s in appeared)
+                sgpa       = round(total_credit_points / total_credits, 2) if total_credits > 0 else 0.0
+                percentage = round(sgpa * 10, 2) if sgpa > 0 else 0.0
+                has_fail   = any(s.get('result') == 'F' for s in appeared)
+                cls        = calc_class_awarded(has_fail, percentage)
+
+                doc.reference.update({
+                    'subjects':          subjects,
+                    'totalCreditPoints': total_credit_points,
+                    'sgpa':              sgpa,
+                    'percentage':        percentage,
+                    'classAwarded':      cls,
+                })
+                fixed_students += 1
+
+        return jsonify({
+            'success': True,
+            'message': f'Fixed {fixed_subjects} absent subject(s) across {fixed_students} student record(s).',
+            'fixedStudents': fixed_students,
+            'fixedSubjects': fixed_subjects,
+        })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500

@@ -50,6 +50,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('resetFormBtn').addEventListener('click', resetUploadForm);
   document.getElementById('loadAnalysisBtn').addEventListener('click', loadAnalysis);
   document.getElementById('downloadCSVBtn').addEventListener('click', downloadCSV);
+  document.getElementById('fixAbsentBtn').addEventListener('click', fixAbsentData);
 
   // Auto-detect branch from USN as user types
   document.getElementById('usn').addEventListener('input', function() {
@@ -229,11 +230,14 @@ async function loadImportedFromBookmarklet() {
     subjectCount = 0;
 
     d.subjects.forEach(s => {
+      const isAbsent = ['A','AB','W','X','NE','NA','-'].includes((s.result||'').toUpperCase());
       addSubjectRow({
         code: s.code, name: s.name,
         credit: s.creditDefined ? s.credit : '',
         creditLocked: !!s.creditDefined,
-        internal: s.internal, external: s.external,
+        internal: isAbsent ? '' : s.internal,
+        external: isAbsent ? '' : s.external,
+        result:   s.result,
       });
     });
 
@@ -375,13 +379,15 @@ async function parsePDF(file) {
       subjectCount = 0;
 
       d.subjects.forEach(s => {
+        const isAbsent = ['A','AB','W','X','NE','NA','-'].includes((s.result||'').toUpperCase());
         addSubjectRow({
           code:        s.code,
           name:        s.name,
-          credit:      s.creditDefined ? s.credit : '',   // auto-filled if admin has defined this subject
-          creditLocked: !!s.creditDefined,                // lock it if admin already set it (0 counts as set)
-          internal:    s.internal,
-          external:    s.external,
+          credit:      s.creditDefined ? s.credit : '',
+          creditLocked: !!s.creditDefined,
+          internal:    isAbsent ? '' : s.internal,
+          external:    isAbsent ? '' : s.external,
+          result:      s.result,
           needsReview: s.needsReview,
           reviewReason: s.reviewReason,
         });
@@ -662,7 +668,7 @@ function addSubjectRow(prefill = {}) {
     <td id="result-${id}" style="text-align:center;">
       <span class="badge badge--na">—</span>
       <label class="absent-label cell-input" style="display:block;margin-top:4px;font-size:10px;color:var(--warning);cursor:pointer;">
-        <input type="checkbox" id="absent-${id}" style="margin-right:3px;" ${prefill.result === 'A' ? 'checked' : ''}>Absent
+        <input type="checkbox" id="absent-${id}" style="margin-right:3px;" ${['A','AB','W','X','NE','NA','-'].includes((prefill.result||'').toUpperCase()) ? 'checked' : ''}>Absent
       </label>
     </td>
 
@@ -705,7 +711,7 @@ function addSubjectRow(prefill = {}) {
     tr.querySelector('.btn-delete-row').classList.add('hidden');
   }
 
-  if (prefill.internal !== undefined || prefill.external !== undefined) {
+  if (prefill.internal !== undefined || prefill.external !== undefined || prefill.result) {
     recalcRow(id);
   }
 }
@@ -957,6 +963,7 @@ function initDashboardCascade() {
     yearSel.value     = '';
     document.getElementById('dashResults').classList.add('hidden');
     document.getElementById('downloadCSVBtn').classList.add('hidden');
+    document.getElementById('fixAbsentBtn').classList.add('hidden');
     updateState();
   });
 
@@ -964,6 +971,7 @@ function initDashboardCascade() {
     yearSel.value = '';
     document.getElementById('dashResults').classList.add('hidden');
     document.getElementById('downloadCSVBtn').classList.add('hidden');
+    document.getElementById('fixAbsentBtn').classList.add('hidden');
     updateState();
   });
 
@@ -987,6 +995,7 @@ async function loadAnalysis() {
 
   document.getElementById('dashResults').classList.add('hidden');
   document.getElementById('downloadCSVBtn').classList.add('hidden');
+  document.getElementById('fixAbsentBtn').classList.add('hidden');
 
   try {
     const params = new URLSearchParams({ branch, semester, academicYear });
@@ -1013,6 +1022,44 @@ async function loadAnalysis() {
 // Store current dashboard filter context so edit/delete can reference it
 let _dashCtx = { branch: '', semester: '', academicYear: '' };
 
+/* ==================== FIX ABSENT DATA ==================== */
+async function fixAbsentData() {
+  const { branch, semester, academicYear } = _dashCtx;
+  if (!branch || !semester || !academicYear) return;
+
+  if (!confirm(
+    `This will scan all saved results for:\nBranch: ${branch} | Sem: ${semester} | Year: ${academicYear}\n\n` +
+    `Any subject where Internal=0 AND External=0 AND Result=F will be corrected to Absent (A).\n\n` +
+    `Proceed?`
+  )) return;
+
+  const btn = document.getElementById('fixAbsentBtn');
+  btn.disabled    = true;
+  btn.textContent = 'Fixing…';
+
+  try {
+    const res  = await fetch('/api/fix-absent', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ branch, semester, academicYear }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      alert(`✓ ${data.message}\n\nReloading dashboard…`);
+      loadAnalysis();   // refresh the table with corrected data
+    } else {
+      alert(`Error: ${data.error}`);
+    }
+  } catch (e) {
+    alert(`Network error: ${e.message}`);
+  } finally {
+    btn.disabled    = false;
+    btn.innerHTML   = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M12 22C6.48 22 2 17.52 2 12S6.48 2 12 2s10 4.48 10 10-4.48 10-10 10z"/>
+      <path d="M12 8v4l3 3"/></svg> Fix Absent Data`;
+  }
+}
+
 function renderDashboard(students, teacherMap) {
   // Capture filter context for edit/delete actions
   _dashCtx = {
@@ -1022,6 +1069,7 @@ function renderDashboard(students, teacherMap) {
   };
   document.getElementById('dashResults').classList.remove('hidden');
   document.getElementById('downloadCSVBtn').classList.remove('hidden');
+  document.getElementById('fixAbsentBtn').classList.remove('hidden');
 
   const total     = students.length;
   const passCount = students.filter(s => s.classAwarded !== 'NC').length;
@@ -1315,13 +1363,15 @@ async function editStudentResult(usn) {
     document.getElementById('subjectRows').innerHTML = '';
     subjectCount = 0;
     (r.subjects || []).forEach(s => {
+      const isAbsent = ['A','AB','W','X','NE','NA','-'].includes((s.result||'').toUpperCase());
       addSubjectRow({
         code:        s.code,
         name:        s.name,
         credit:      s.credit,
         creditLocked: s.credit > 0,
-        internal:    s.internal,
-        external:    s.external,
+        internal:    isAbsent ? '' : s.internal,
+        external:    isAbsent ? '' : s.external,
+        result:      s.result,
       });
     });
 
