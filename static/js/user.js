@@ -722,7 +722,9 @@ function recalcRow(id) {
   const total    = internal + external;
   const internalBlank = document.getElementById(`internal-${id}`).value.trim() === '';
   const externalBlank = document.getElementById(`external-${id}`).value.trim() === '';
-  const hasData  = !internalBlank || !externalBlank;  // at least one field has a value
+  // If external is blank the student was absent for the exam — treat whole subject as absent.
+  // Both blank also means absent. Only internal blank alone is a data issue (needsReview), not absent.
+  const hasData  = !externalBlank;   // external must have a value to be a valid attempt
 
   const totalEl  = document.getElementById(`total-${id}`);
   const gradeEl  = document.getElementById(`grade-${id}`);
@@ -787,10 +789,10 @@ function collectSubjects() {
 
     // A subject is absent when:
     // 1. The absent checkbox is ticked, OR
-    // 2. BOTH internal AND external fields are completely blank (— in Total)
-    const internalBlank = !internalInput || internalInput.value.trim() === '';
+    // 2. External field is blank — student may have internal marks but was
+    //    absent for the external exam (VTU shows result 'A' in this case)
     const externalBlank = !externalInput || externalInput.value.trim() === '';
-    const isAbsent = (absentCb && absentCb.checked) || (internalBlank && externalBlank);
+    const isAbsent = (absentCb && absentCb.checked) || externalBlank;
 
     if (isAbsent) {
       if (code) acc.push({
