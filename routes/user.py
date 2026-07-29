@@ -491,6 +491,7 @@ def save_result():
         scheme = get_scheme()
         max_per_subject   = scheme['maxMarksPerSubject']
         min_external_pass = scheme.get('minExternalPass', 18)
+        min_internal_pass = scheme.get('minInternalPass', 22)
         external_required_map = get_subject_external_required()
 
         enriched = []
@@ -518,9 +519,14 @@ def save_result():
             else:
                 gp, letter = calc_grade(total)
 
-                # External pass-mark rule
+                # Pass requires BOTH:
+                # 1. External >= minExternalPass (default 18)
+                # 2. Internal >= minInternalPass (default 22)
+                # Either condition failing = FAIL, regardless of total
                 requires_external = external_required_map.get(code_val, True)
                 if requires_external and external < min_external_pass:
+                    gp, letter = 0, 'F'
+                elif requires_external and internal < min_internal_pass:
                     gp, letter = 0, 'F'
 
                 res        = 'P' if gp > 0 else 'F'

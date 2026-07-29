@@ -82,6 +82,7 @@ DEFAULT_SCHEME = {
     "maxCredit":           10,
     "toppersCount":        3,
     "minExternalPass":     18,
+    "minInternalPass":     22,
 }
 
 DEFAULT_APP_SETTINGS = {

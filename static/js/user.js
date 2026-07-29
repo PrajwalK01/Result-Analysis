@@ -573,17 +573,18 @@ function getClassAwarded(hasFail, pct) {
   return 'NC';
 }
 
-// Mirrors the same rule enforced server-side in save_result(): unless the
-// admin has explicitly disabled it for this subject code (Admin → Subjects),
-// scoring below CFG.scheme.minExternalPass in external fails the subject
-// outright, even if internal+external together would otherwise pass.
-function applyExternalPassRule(code, external, gp, letter) {
+// Mirrors the same rules enforced server-side in save_result():
+// A subject fails if external < minExternalPass OR internal < minInternalPass,
+// regardless of total — unless admin has disabled external requirement for this code.
+function applyExternalPassRule(code, external, gp, letter, internal) {
   const minExternal = (CFG.scheme && CFG.scheme.minExternalPass) || 18;
+  const minInternal = (CFG.scheme && CFG.scheme.minInternalPass) || 22;
   const requiresExternal = CFG.externalRequiredMap[code] !== undefined
     ? CFG.externalRequiredMap[code]
     : true;
-  if (requiresExternal && external < minExternal) {
-    return { gp: 0, letter: 'F' };
+  if (requiresExternal) {
+    if (external < minExternal) return { gp: 0, letter: 'F' };
+    if (internal  < minInternal) return { gp: 0, letter: 'F' };
   }
   return { gp, letter };
 }
@@ -762,7 +763,7 @@ function recalcRow(id) {
     } else {
       let gp     = getGradePoint(total);
       let letter = getLetterGrade(total);
-      ({ gp, letter } = applyExternalPassRule(code, external, gp, letter));
+      ({ gp, letter } = applyExternalPassRule(code, external, gp, letter, internal));
       totalEl.textContent  = total;
       gradeEl.innerHTML    = `${gp} <span style="font-size:11px;color:var(--muted);">(${letter})</span>`;
       resultEl.innerHTML   = gp > 0
@@ -819,7 +820,7 @@ function collectSubjects() {
     const total    = internal + external;
     let grade        = getGradePoint(total);
     let letterGrade  = getLetterGrade(total);
-    ({ gp: grade, letter: letterGrade } = applyExternalPassRule(code.toUpperCase(), external, grade, letterGrade));
+    ({ gp: grade, letter: letterGrade } = applyExternalPassRule(code.toUpperCase(), external, grade, letterGrade, internal));
     const result       = grade > 0 ? 'P' : 'F';
     const creditPoints = grade * credit;
 
