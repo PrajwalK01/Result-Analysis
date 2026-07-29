@@ -736,14 +736,15 @@ function recalcRow(id) {
   document.getElementById(`txt-external-${id}`).textContent = document.getElementById(`external-${id}`).value || '—';
 
   if (!hasData) {
-    totalEl.textContent  = '—';
-    gradeEl.textContent  = '—';
-    resultEl.innerHTML   = '<span class="badge badge--na">—</span>';
+    // Both fields blank = Absent
+    totalEl.textContent = '—';
+    gradeEl.textContent = '—';
+    resultEl.innerHTML  = '<span class="badge badge--absent">ABSENT</span>';
   } else {
     const code     = document.getElementById(`code-${id}`).value.trim().toUpperCase();
     const absentCb = document.getElementById(`absent-${id}`);
-    // Auto-absent: both fields blank, OR checkbox ticked
-    const isAbsent = (absentCb && absentCb.checked) || (internalBlank && externalBlank);
+    // Also absent if checkbox is ticked even when marks exist
+    const isAbsent = absentCb && absentCb.checked;
 
     if (isAbsent) {
       totalEl.textContent = '—';
