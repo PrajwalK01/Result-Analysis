@@ -102,13 +102,13 @@ body {
 .login-logo__icon {
   width: 42px;
   height: 42px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #7c5cff, #5a3fd4);
+  border-radius: 50%;
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  box-shadow: 0 4px 14px rgba(124,92,255,0.35);
+  overflow: hidden;
 }
 
 .login-logo__text {
