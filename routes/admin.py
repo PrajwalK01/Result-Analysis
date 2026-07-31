@@ -156,15 +156,18 @@ def upsert_teacher():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@admin_bp.route('/api/admin/teachers/<path:key>', methods=['DELETE'])
+@admin_bp.route('/api/admin/teachers/delete', methods=['DELETE'])
 @admin_required
-def remove_teacher(key):
-    # key is "BRANCH||SEM||CODE"
+def remove_teacher():
+    """Delete a teacher assignment using query params to avoid URL encoding issues."""
+    branch   = request.args.get('branch',   '').strip()
+    semester = request.args.get('semester', '').strip()
+    code     = request.args.get('code',     '').strip().upper()
+
+    if not branch or not semester or not code:
+        return jsonify({'success': False,
+                        'error': 'branch, semester and code are required'}), 400
     try:
-        parts = key.split('||')
-        if len(parts) != 3:
-            return jsonify({'success': False, 'error': 'Invalid key format'}), 400
-        branch, semester, code = parts
         delete_subject_teacher(branch, semester, code)
         return jsonify({'success': True, 'message': f'{code} teacher removed.'})
     except Exception as e:

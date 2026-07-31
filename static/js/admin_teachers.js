@@ -1,6 +1,7 @@
 /* ── Admin: Subject Teachers ─────────────────────────────────────────────── */
-const API_TEACHERS     = '/api/admin/teachers';
-const API_TEACHER_DEL  = key => `/api/admin/teachers/${encodeURIComponent(key)}`;
+const API_TEACHERS      = '/api/admin/teachers';
+const API_TEACHER_DEL   = (branch, semester, code) =>
+  `/api/admin/teachers/delete?branch=${encodeURIComponent(branch)}&semester=${encodeURIComponent(semester)}&code=${encodeURIComponent(code)}`;
 const API_ADMIN_LOOKUPS = '/api/admin/lookups';
 
 let allTeachers = [];
@@ -100,10 +101,9 @@ async function saveTeacher() {
 }
 
 async function removeTeacher(branch, semester, code) {
-  const key = `${branch.toUpperCase()}||${semester.toUpperCase()}||${code.toUpperCase()}`;
   if (!confirm(`Remove teacher assignment for ${code} (${branch} / ${semester})?`)) return;
   try {
-    const res  = await fetch(API_TEACHER_DEL(key), { method: 'DELETE' });
+    const res  = await fetch(API_TEACHER_DEL(branch, semester, code), { method: 'DELETE' });
     const data = await res.json();
     if (data.success) { showMsg('teacherMsg', `✓ ${data.message}`, 'ok'); loadTeachers(); }
     else showMsg('teacherMsg', data.error, 'err');
