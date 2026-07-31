@@ -114,8 +114,9 @@ function setupBookmarklet() {
       for(var i=headerIdx+1; i<rows.length; i++){
         var cells = Array.from(rows[i].querySelectorAll('.divTableCell')).map(cellText);
         if(cells.length < 5) continue;
-        var code = cells[0].toUpperCase();
-        if(!/^[A-Z]{2,6}\\d{3}[A-Z0-9]{0,3}$/.test(code)) continue;
+        var code = cells[0].toUpperCase().replace(/\\s+/g,'');
+        // VTU subject codes: old scheme e.g. BCS601, new 2022 scheme e.g. 1BMATF101, 22PHYC201
+        if(!/^(?:\\d{1,2})?[A-Z]{2,6}\\d{2,4}[A-Z0-9]{0,4}$/.test(code)) continue;
 
         var name = cells[1] || '';
         var internal = parseInt(cells[2],10); if(isNaN(internal)) internal = 0;

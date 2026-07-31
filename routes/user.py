@@ -170,7 +170,8 @@ def _parse_subject_table(pdf) -> list:
                     continue  # header row
 
                 code_cell = cells[0] if cells else ''
-                if not re.match(r'^[A-Z]{2,6}\d{3}[A-Z0-9]{0,3}$', code_cell.upper()):
+                # Support both old scheme (BCS601) and new 2022 scheme (1BMATF101, 22PHYC201)
+                if not re.match(r'^(?:\d{1,2})?[A-Z]{2,6}\d{2,4}[A-Z0-9]{0,4}$', code_cell.upper()):
                     continue  # not a subject row
 
                 code = code_cell.upper()
@@ -301,14 +302,14 @@ def parse_vtu_pdf(file_bytes: bytes) -> dict:
         seen, lines = set(), full_text.split('\n')
         i = 0
         while i < len(lines):
-            cm = re.match(r'^([A-Z]{2,6}\d{3}[A-Z0-9]{0,3})\b\s*(.*)', lines[i].strip())
+            cm = re.match(r'^((?:\d{1,2})?[A-Z]{2,6}\d{2,4}[A-Z0-9]{0,4})\b\s*(.*)', lines[i].strip())
             if cm:
                 code = cm.group(1).upper()
                 rest = cm.group(2).strip()
                 j = i + 1
                 while j < len(lines):
                     nl = lines[j].strip()
-                    if not nl or re.match(r'^[A-Z]{2,6}\d{3}', nl): break
+                    if not nl or re.match(r'^(?:\d{1,2})?[A-Z]{2,6}\d{2,4}', nl): break
                     if re.search(r'PASS|FAIL|ABSENT|Nomenclature|https://', nl, re.IGNORECASE): break
                     rest += ' ' + nl
                     j += 1
