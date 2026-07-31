@@ -1340,10 +1340,10 @@ function renderAllStudents(students) {
 
   // Wire Edit + Delete buttons after all rows are in the DOM
   tbody.querySelectorAll('.dash-edit-btn').forEach(btn =>
-    btn.addEventListener('click', () => editStudentResult(btn.dataset.usn))
+    btn.addEventListener('click', (e) => editStudentResult(e.currentTarget.dataset.usn))
   );
   tbody.querySelectorAll('.dash-del-btn').forEach(btn =>
-    btn.addEventListener('click', () => deleteStudentResult(btn.dataset.usn))
+    btn.addEventListener('click', (e) => deleteStudentResult(e.currentTarget.dataset.usn))
   );
 
   window._lastAnalysisStudents     = sorted;

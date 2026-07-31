@@ -170,14 +170,16 @@ function renderTable() {
   });
 
   tbody.querySelectorAll('button[data-edit-branch]').forEach(btn =>
-    btn.addEventListener('click', () =>
-      editTeacher(btn.dataset.editBranch, btn.dataset.editSem, btn.dataset.editCode)
-    )
+    btn.addEventListener('click', (e) => {
+      const b = e.currentTarget;
+      editTeacher(b.dataset.editBranch, b.dataset.editSem, b.dataset.editCode);
+    })
   );
   tbody.querySelectorAll('button[data-branch]').forEach(btn =>
-    btn.addEventListener('click', () =>
-      removeTeacher(btn.dataset.branch, btn.dataset.sem, btn.dataset.code)
-    )
+    btn.addEventListener('click', (e) => {
+      const b = e.currentTarget;
+      removeTeacher(b.dataset.branch, b.dataset.sem, b.dataset.code);
+    })
   );
 }
 

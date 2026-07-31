@@ -144,10 +144,10 @@ function renderTable() {
   });
 
   tbody.querySelectorAll('button[data-edit-code]').forEach(btn =>
-    btn.addEventListener('click', () => editSubject(btn.dataset.editCode))
+    btn.addEventListener('click', (e) => editSubject(e.currentTarget.dataset.editCode))
   );
   tbody.querySelectorAll('button[data-code]').forEach(btn =>
-    btn.addEventListener('click', () => removeSubject(btn.dataset.code))
+    btn.addEventListener('click', (e) => removeSubject(e.currentTarget.dataset.code))
   );
 }
 

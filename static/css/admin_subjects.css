@@ -1,5 +1,11 @@
 /* ── Admin panel shared styles ──────────────────────────────────────────── */
 
+/* Prevent SVG children inside buttons from swallowing click events —
+   fixes data-* attribute lookups when user clicks on an SVG path/polyline */
+button svg, button svg * {
+  pointer-events: none;
+}
+
 /* Tab nav — reuse .tab / .tab--active from user.css, but style links like buttons */
 .tabs a.tab {
   text-decoration: none;

@@ -15,6 +15,12 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
+/* Prevent SVG children inside buttons from swallowing click events —
+   fixes data-* attribute lookups when clicking on SVG paths/polylines */
+button svg, button svg * {
+  pointer-events: none;
+}
+
 body {
   margin: 0;
   background: var(--bg);
