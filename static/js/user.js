@@ -86,72 +86,110 @@ function setupBookmarklet() {
   // filled in automatically from wherever this app is actually running.
   const code = `(function(){
     function cellText(el){return (el.innerText||el.textContent||'').trim();}
+    function isValidCode(c){return /^(?:\\d{1,2})?[A-Z]{2,6}\\d{2,4}[A-Z0-9]{0,4}$/.test(c);}
 
-    // VTU's page has NO real <table> tags — it's all styled divs:
-    // .divTable > .divTableBody > .divTableRow > .divTableCell
-    var divTables = Array.from(document.querySelectorAll('.divTable'));
     var usn='', studentName='', semester='', subjects=[];
 
-    divTables.forEach(function(dt){
-      var rows = Array.from(dt.querySelectorAll('.divTableRow'));
-
-      rows.forEach(function(row){
-        var cells = Array.from(row.querySelectorAll('.divTableCell')).map(cellText);
-        if(cells.length===2){
-          var key = cells[0].toLowerCase();
-          if(key.indexOf('seat number')>-1 || key==='usn'){ usn = cells[1].replace(/\\s+/g,'').toUpperCase(); }
-          if(key.indexOf('student name')>-1 || key==='name'){ studentName = cells[1].replace(/\\s{2,}/g,' ').trim(); }
-        }
-      });
-
-      var headerIdx = rows.findIndex(function(r){
-        return Array.from(r.querySelectorAll('.divTableCell')).some(function(c){
-          return cellText(c).toLowerCase().indexOf('subject code') > -1;
+    // ── Strategy 1: VTU divTable layout (older results) ──────────────────
+    var divTables = Array.from(document.querySelectorAll('.divTable'));
+    if(divTables.length > 0){
+      divTables.forEach(function(dt){
+        var rows = Array.from(dt.querySelectorAll('.divTableRow'));
+        rows.forEach(function(row){
+          var cells = Array.from(row.querySelectorAll('.divTableCell')).map(cellText);
+          if(cells.length===2){
+            var key = cells[0].toLowerCase();
+            if(key.indexOf('seat number')>-1||key==='usn') usn=cells[1].replace(/\\s+/g,'').toUpperCase();
+            if(key.indexOf('student name')>-1||key==='name') studentName=cells[1].replace(/\\s{2,}/g,' ').trim();
+          }
         });
+        var headerIdx = rows.findIndex(function(r){
+          return Array.from(r.querySelectorAll('.divTableCell')).some(function(c){
+            return cellText(c).toLowerCase().indexOf('subject code')>-1;
+          });
+        });
+        if(headerIdx===-1) return;
+        for(var i=headerIdx+1;i<rows.length;i++){
+          var cells=Array.from(rows[i].querySelectorAll('.divTableCell')).map(cellText);
+          if(cells.length<5) continue;
+          var code=cells[0].toUpperCase().replace(/\\s+/g,'');
+          if(!isValidCode(code)) continue;
+          var name=cells[1]||'';
+          var internal=parseInt(cells[2],10); if(isNaN(internal)) internal=0;
+          var external=parseInt(cells[3],10); if(isNaN(external)) external=0;
+          var total=parseInt(cells[4],10);    if(isNaN(total)) total=internal+external;
+          var result='';
+          for(var ci=5;ci<cells.length;ci++){
+            var rv=(cells[ci]||'').trim().toUpperCase();
+            if(/^(P|F|A|AB|W|X|NE|NA)$/.test(rv)){result=rv;break;}
+          }
+          if(!result) result=(internal>0||external>0)?(total>=40?'P':'F'):'A';
+          subjects.push({code:code,name:name,internal:internal,external:external,total:total,result:result});
+        }
       });
-      if(headerIdx === -1) return;
+    }
 
-      for(var i=headerIdx+1; i<rows.length; i++){
-        var cells = Array.from(rows[i].querySelectorAll('.divTableCell')).map(cellText);
-        if(cells.length < 5) continue;
-        var code = cells[0].toUpperCase().replace(/\\s+/g,'');
-        // VTU subject codes: old scheme e.g. BCS601, new 2022 scheme e.g. 1BMATF101, 22PHYC201
-        if(!/^(?:\\d{1,2})?[A-Z]{2,6}\\d{2,4}[A-Z0-9]{0,4}$/.test(code)) continue;
-
-        var name = cells[1] || '';
-        var internal = parseInt(cells[2],10); if(isNaN(internal)) internal = 0;
-        var external = parseInt(cells[3],10); if(isNaN(external)) external = 0;
-        var total    = parseInt(cells[4],10); if(isNaN(total)) total = internal+external;
-
-        // Find the result cell — VTU puts P/F/A/W/X/NE/NA in the Result column.
-        // Search cells[5] onwards for a recognisable result code so layout
-        // changes (extra columns) don't silently turn Absent into Fail.
-        var result = '';
-        for(var ci=5; ci<cells.length; ci++){
-          var rv = (cells[ci]||'').trim().toUpperCase();
-          if(/^(P|F|A|AB|W|X|NE|NA)$/.test(rv)){ result = rv; break; }
+    // ── Strategy 2: Real <table> fallback (newer VTU pages) ───────────────
+    if(subjects.length===0){
+      var tables = Array.from(document.querySelectorAll('table'));
+      tables.forEach(function(tbl){
+        var rows = Array.from(tbl.querySelectorAll('tr'));
+        // Look for key-value rows for USN / Name
+        rows.forEach(function(row){
+          var cells = Array.from(row.querySelectorAll('td,th')).map(cellText);
+          if(cells.length>=2){
+            var key=cells[0].toLowerCase();
+            if(!usn && (key.indexOf('seat number')>-1||key==='usn')) usn=cells[1].replace(/\\s+/g,'').toUpperCase();
+            if(!studentName && (key.indexOf('student name')>-1||key==='name')) studentName=cells[1].replace(/\\s{2,}/g,' ').trim();
+          }
+        });
+        // Find header row containing "Subject Code"
+        var headerIdx=rows.findIndex(function(r){
+          return Array.from(r.querySelectorAll('td,th')).some(function(c){
+            return cellText(c).toLowerCase().indexOf('subject code')>-1;
+          });
+        });
+        if(headerIdx===-1) return;
+        for(var i=headerIdx+1;i<rows.length;i++){
+          var cells=Array.from(rows[i].querySelectorAll('td,th')).map(cellText);
+          if(cells.length<5) continue;
+          var code=cells[0].toUpperCase().replace(/\\s+/g,'');
+          if(!isValidCode(code)) continue;
+          var name=cells[1]||'';
+          var internal=parseInt(cells[2],10); if(isNaN(internal)) internal=0;
+          var external=parseInt(cells[3],10); if(isNaN(external)) external=0;
+          var total=parseInt(cells[4],10);    if(isNaN(total)) total=internal+external;
+          var result='';
+          for(var ci=5;ci<cells.length;ci++){
+            var rv=(cells[ci]||'').trim().toUpperCase();
+            if(/^(P|F|A|AB|W|X|NE|NA)$/.test(rv)){result=rv;break;}
+          }
+          if(!result) result=(internal>0||external>0)?(total>=40?'P':'F'):'A';
+          subjects.push({code:code,name:name,internal:internal,external:external,total:total,result:result});
         }
-        // Only fall back to computed P/F when we truly found no result code
-        // AND there are actual marks — never default to F when marks are zero
-        // (zero external = absent, not necessarily fail)
-        if(!result){
-          result = (internal>0||external>0) ? (total>=40?'P':'F') : 'A';
-        }
+      });
+    }
 
-        subjects.push({code:code, name:name, internal:internal, external:external, total:total, result:result});
-      }
-    });
+    // ── Strategy 3: Scrape entire page text for USN if still missing ──────
+    if(!usn){
+      var m=document.body.innerText.match(/(?:University Seat Number|USN)\\s*[:\\-]?\\s*([1-9][A-Z0-9]{6,12})/i);
+      if(m) usn=m[1].replace(/\\s+/g,'').toUpperCase();
+    }
+    if(!studentName){
+      var m2=document.body.innerText.match(/(?:Student Name|Name)\\s*[:\\-]?\\s*([A-Z][A-Z .'-]{2,50}?)(?:\\n|$)/i);
+      if(m2) studentName=m2[1].trim();
+    }
 
-    var semMatch = document.body.innerText.match(/Semester\\s*:?\\s*(\\d+)/i);
+    var semMatch = document.body.innerText.match(/Semester\\s*[:\\-]?\\s*(\\d+)/i);
     if(semMatch) semester = 'SEM ' + semMatch[1];
 
     if(!usn && subjects.length===0){
-      alert('Could not find a VTU result table on this page. Make sure your result has fully loaded first.');
+      alert('Could not find a VTU result table on this page.\\nMake sure the result has fully loaded.\\n\\nPage URL: '+window.location.href);
       return;
     }
-    var payload = {usn:usn, studentName:studentName, semester:semester, subjects:subjects};
-    var encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
-    window.open('${appOrigin}/user?imported=' + encoded, '_blank');
+    var payload={usn:usn,studentName:studentName,semester:semester,subjects:subjects};
+    var encoded=btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+    window.open('${appOrigin}/user?imported='+encoded,'_blank');
   })();`;
 
   const a = document.createElement('a');
