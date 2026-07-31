@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin · Subject Credits</title>
+  <title>Admin · Manage Users</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/user.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_subjects.css') }}">
 </head>
@@ -48,7 +48,7 @@
 
   <!-- ── Admin nav tabs ── -->
   <nav class="tabs">
-    <a href="{{ url_for('admin.admin_subjects_page') }}" class="tab tab--active">
+    <a href="{{ url_for('admin.admin_subjects_page') }}" class="tab">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/>
       </svg>
@@ -62,7 +62,7 @@
       </svg>
       Subject Teachers
     </a>
-    <a href="{{ url_for('admin.admin_users_page') }}" class="tab">
+    <a href="{{ url_for('admin.admin_users_page') }}" class="tab tab--active">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
         <circle cx="8.5" cy="7" r="4"/>
@@ -78,69 +78,60 @@
 
       <div class="admin-panel-header">
         <div>
-          <h2 class="section-title">Subject Credits</h2>
-          <p class="section-desc">Add subject codes with their credits. These auto-fill when a PDF is parsed and are locked once set by admin.</p>
+          <h2 class="section-title">Manage Users</h2>
+          <p class="section-desc">Add new users with their credentials and roles. They will be able to log in to the system. Passwords are saved exactly as entered.</p>
         </div>
       </div>
 
       <!-- Add / Update form -->
       <div class="admin-form-box">
-        <div class="field-grid field-grid--2">
+        <div class="field-grid field-grid--3">
           <div class="field">
-            <label for="subjCode">Subject Code</label>
-            <input id="subjCode" placeholder="e.g. BCS601" autocomplete="off">
+            <label for="newUsername">Username</label>
+            <input id="newUsername" placeholder="e.g. staff_member" autocomplete="off">
           </div>
           <div class="field">
-            <label for="subjCredit">Credit</label>
-            <input id="subjCredit" type="number" min="0" max="4" placeholder="e.g. 4">
+            <label for="newPassword">Password</label>
+            <input id="newPassword" type="text" placeholder="e.g. pass123" autocomplete="off">
           </div>
-        </div>
-        <div class="field field--checkbox">
-          <label for="subjExternalRequired">
-            <input id="subjExternalRequired" type="checkbox" checked>
-            Requires external pass mark (≥18) to pass
-          </label>
+          <div class="field">
+            <label for="newUserRole">Role</label>
+            <select id="newUserRole">
+              <option value="ResultAnalysis">ResultAnalysis (Standard)</option>
+              <option value="Admin">Admin</option>
+            </select>
+          </div>
         </div>
         <div class="actions">
-          <button id="saveSubjectBtn" class="btn btn--primary">
+          <button id="saveUserBtn" class="btn btn--primary">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
-              <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+              <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+              <circle cx="8.5" cy="7" r="4"/>
+              <line x1="20" y1="8" x2="20" y2="14"/>
+              <line x1="23" y1="11" x2="17" y2="11"/>
             </svg>
-            Save Subject
+            Add User
           </button>
-          <button id="clearSubjectBtn" class="btn btn--ghost">Clear</button>
+          <button id="clearUserBtn" class="btn btn--ghost">Clear</button>
         </div>
-        <div id="adminMsg" class="message hidden"></div>
+        <div id="userMsg" class="message hidden"></div>
       </div>
 
       <!-- Search + table -->
-      <div class="section-divider"><span>All Subjects</span></div>
+      <div class="section-divider"><span>All Active Users</span></div>
 
       <div class="admin-toolbar">
         <div class="field admin-search">
-          <input id="subjectSearch" placeholder="🔍  Filter by code…">
+          <input id="userSearch" placeholder="🔍  Filter by username or role…">
         </div>
-        <div class="field">
-          <select id="filterExternalRequired">
-            <option value="">All (Required + Not Required)</option>
-            <option value="required">Required</option>
-            <option value="notRequired">Not Required</option>
-          </select>
-        </div>
-        <div class="field">
-          <select id="filterCredit">
-            <option value="">All Credits</option>
-          </select>
-        </div>
-        <span id="subjectCount" class="admin-count"></span>
+        <span id="userCount" class="admin-count"></span>
       </div>
 
       <div class="table-wrap">
-        <table class="data-table" id="subjectsTable">
+        <table class="data-table" id="usersTable">
           <thead>
             <tr>
-              <th>#</th><th>Subject Code</th><th>Credit</th><th>External Req.</th><th>Action</th>
+              <th>#</th><th>Username</th><th>Role</th><th>Status</th><th>Action</th>
             </tr>
           </thead>
           <tbody>
@@ -152,6 +143,6 @@
     </section>
   </main>
 
-  <script src="{{ url_for('static', filename='js/admin_subjects.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/admin_users.js') }}"></script>
 </body>
 </html>

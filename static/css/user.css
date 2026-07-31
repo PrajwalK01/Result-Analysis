@@ -1,10 +1,11 @@
 :root {
-  --bg:       #0d0f14;
-  --panel:    #161922;
-  --panel-2:  #1e222d;
-  --border:   #2a2f3d;
+  --bg:       #0b0d12;
+  --panel:    #13161f;
+  --panel-2:  #1a1e2a;
+  --border:   #252a38;
+  --border-h: #3a4156;
   --text:     #e8eaf0;
-  --muted:    #8b91a5;
+  --muted:    #7c8299;
   --accent:   #7c5cff;
   --accent-2: #00d4a8;
   --danger:   #ff5c7a;
@@ -28,6 +29,44 @@ body {
   font-family: 'Segoe UI', Roboto, Arial, sans-serif;
   font-size: 14px;
   min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* ── Background decorations ── */
+.bg-grid {
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(124,92,255,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(124,92,255,0.04) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.bg-blob {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(80px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.bg-blob--1 {
+  width: 500px;
+  height: 500px;
+  background: rgba(124,92,255,0.12);
+  top: -150px;
+  left: -100px;
+}
+
+.bg-blob--2 {
+  width: 400px;
+  height: 400px;
+  background: rgba(0,212,168,0.07);
+  bottom: -100px;
+  right: -80px;
 }
 
 /* ===== TOPBAR ===== */
@@ -89,6 +128,8 @@ body {
   display: flex;
   gap: 8px;
   padding: 20px 28px 0;
+  position: relative;
+  z-index: 1;
 }
 
 .tab {
@@ -114,7 +155,7 @@ body {
 }
 
 /* ===== LAYOUT ===== */
-.content { padding: 20px 28px 60px; }
+.content { padding: 20px 28px 60px; position: relative; z-index: 1; }
 
 .panel {
   background: var(--panel);
