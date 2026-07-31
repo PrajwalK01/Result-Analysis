@@ -562,6 +562,10 @@ select option {
 .btn--primary  { background: var(--accent); color: #fff; }
 .btn--secondary { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); }
 .btn--ghost    { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+.btn--admin    { background: rgba(0, 212, 168, 0.10); border: 1px solid rgba(0, 212, 168, 0.28); color: #00d4a8; }
+.btn--admin:hover { background: rgba(0, 212, 168, 0.18); border-color: rgba(0, 212, 168, 0.45); }
+.btn--logout   { background: rgba(255, 92, 122, 0.08); border: 1px solid rgba(255, 92, 122, 0.22); color: #ff7e96; }
+.btn--logout:hover { background: rgba(255, 92, 122, 0.16); border-color: rgba(255, 92, 122, 0.40); }
 .btn--danger   { background: var(--danger); color: #fff; }
 .btn--sm       { padding: 6px 12px; font-size: 12px; }
 

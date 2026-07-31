@@ -908,6 +908,35 @@ async function saveResult() {
 
   const saveBtn = document.getElementById('saveResultBtn');
   saveBtn.disabled    = true;
+  saveBtn.textContent = 'Checking…';
+
+  // ── Duplicate check: ask the server if this USN already exists ──────
+  try {
+    const checkParams = new URLSearchParams({ branch, semester, academicYear, usn });
+    const checkRes    = await fetch(`/api/get-result?${checkParams}`);
+    const checkData   = await checkRes.json();
+
+    if (checkData.success) {
+      // Result already exists — ask the user before overwriting
+      const existingName = checkData.result?.studentName || usn;
+      const confirmed = confirm(
+        `⚠ A result for USN "${usn}" (${existingName}) already exists for ` +
+        `${branch} · ${semester} · ${academicYear}.\n\n` +
+        `Do you want to overwrite it with the new data?`
+      );
+      if (!confirmed) {
+        showMsg(msgEl, `Save cancelled — existing result for ${usn} was not overwritten.`, 'err');
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save Result`;
+        return;
+      }
+    }
+    // If checkData.success is false (404 = not found), proceed — it's a new result
+  } catch (err) {
+    // Network error on check — proceed with save anyway (server will handle merge)
+    console.warn('Duplicate check failed, proceeding with save:', err);
+  }
+
   saveBtn.textContent = 'Saving…';
 
   try {
@@ -919,7 +948,8 @@ async function saveResult() {
     const data = await res.json();
 
     if (data.success) {
-      showMsg(msgEl, '✓ Result saved successfully.', 'ok');
+      const action = data.isUpdate ? 'updated' : 'saved';
+      showMsg(msgEl, `✓ Result ${action} successfully.`, 'ok');
       resetUploadForm();
       loadLookups();
     } else {

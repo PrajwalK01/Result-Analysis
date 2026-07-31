@@ -24,9 +24,9 @@
       <div class="avatar">{{ user_name[0] | upper if user_name else 'U' }}</div>
       <span class="topbar__username">{{ user_name }}</span>
       {% if is_admin %}
-      <a href="/admin/subjects" class="btn btn--ghost">Admin</a>
+      <a href="/admin/subjects" class="btn btn--admin">Admin</a>
       {% endif %}
-      <a href="{{ url_for('login.logout') }}" class="btn btn--ghost">
+      <a href="{{ url_for('login.logout') }}" class="btn btn--logout">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
           <polyline points="16 17 21 12 16 7"/>
