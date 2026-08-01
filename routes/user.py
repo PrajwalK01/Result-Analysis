@@ -5,10 +5,13 @@ import os, re, io, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from firebase_init  import get_db
 from constants      import (
-    COL_LOOKUPS, COL_CONFIG,
+    COL_LOOKUPS, COL_CONFIG, COL_AUDIT_LOGS,
     DOC_BRANCHES, DOC_SEMESTERS, DOC_ACADEMIC_YEARS,
     FIELD_BRANCH, FIELD_SEMESTER, FIELD_ACADEMIC_YEAR,
     FIELD_USN, FIELD_STUDENT_NAME,
+    FIELD_ACTION, FIELD_TARGET_TYPE, FIELD_TARGET_ID, FIELD_DETAILS,
+    FIELD_IS_DELETED, FIELD_DELETED_AT, FIELD_DELETED_BY,
+    FIELD_SAVED_BY,
     VTU_USN_LETTER_POSITIONS, VTU_USN_BRANCH_SLICE,
     OCR_DIGIT_TO_LETTER, VTU_EXAM_MONTH_PATTERN,
 )
@@ -22,6 +25,22 @@ from config_loader  import (
 )
 
 user_bp = Blueprint('user', __name__)
+
+
+def _log_result_action(action: str, target_type: str, target_id: str, details: dict):
+    try:
+        get_db().collection(COL_AUDIT_LOGS).add({
+            FIELD_ACTION: action,
+            FIELD_TARGET_TYPE: target_type,
+            FIELD_TARGET_ID: target_id,
+            FIELD_DETAILS: details,
+            'ActorUserId': session.get('UserId', ''),
+            'ActorUserName': session.get('UserName', ''),
+            'ActorRole': session.get('UserRole', ''),
+            'createdAt': firestore.SERVER_TIMESTAMP,
+        })
+    except Exception:
+        pass
 
 
 def _results_collection(academic_year: str, semester: str, branch: str) -> str:
@@ -460,15 +479,17 @@ def get_analysis():
                         'error': 'branch, semester and academicYear are required'}), 400
     try:
         collection_name = _results_collection(academic_year, semester, branch)
-        docs = list(
-            get_db().collection(collection_name).stream()
-        )
-        if not docs:
+        docs = list(get_db().collection(collection_name).stream())
+        active_docs = []
+        for doc in docs:
+            data = doc.to_dict() or {}
+            if data.get(FIELD_IS_DELETED) is True:
+                continue
+            active_docs.append(data)
+        if not active_docs:
             return jsonify({'success': True, 'students': [], 'message': 'No results found'})
-        # Attach teacher map so frontend can show teacher per subject
         teacher_map = get_teacher_map(branch, semester)
-        return jsonify({'success': True, 'students': [d.to_dict() for d in docs],
-                        'teacherMap': teacher_map})
+        return jsonify({'success': True, 'students': active_docs, 'teacherMap': teacher_map})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -591,13 +612,18 @@ def save_result():
             'sgpa':               sgpa,
             'percentage':         percentage,
             'classAwarded':       cls,
-            'savedBy':            session.get('UserId', ''),
+            FIELD_SAVED_BY:      session.get('UserId', ''),
+            FIELD_IS_DELETED:    False,
             'updatedAt':          firestore.SERVER_TIMESTAMP,
         }
         if not is_update:
             record['createdAt'] = firestore.SERVER_TIMESTAMP
 
         doc_ref.set(record, merge=True)
+        _log_result_action(
+            'SaveResult', 'Result', doc_id,
+            {'branch': data[FIELD_BRANCH].strip(), 'semester': data[FIELD_SEMESTER].strip(), 'academicYear': data[FIELD_ACADEMIC_YEAR].strip(), 'usn': data[FIELD_USN].strip().upper()}
+        )
 
         for doc_name, val in [
             (DOC_BRANCHES,      data[FIELD_BRANCH]),
@@ -717,8 +743,18 @@ def delete_result():
         doc_ref = get_db().collection(collection_name).document(doc_id)
         if not doc_ref.get().exists:
             return jsonify({'success': False, 'error': 'Result not found'}), 404
-        doc_ref.delete()
-        return jsonify({'success': True, 'message': f'Result for {usn} deleted.'})
+
+        doc = doc_ref.get()
+        if doc.to_dict().get(FIELD_IS_DELETED) is True:
+            return jsonify({'success': False, 'error': 'Result already deleted.'}), 409
+
+        doc_ref.update({
+            FIELD_IS_DELETED: True,
+            FIELD_DELETED_AT: firestore.SERVER_TIMESTAMP,
+            FIELD_DELETED_BY: session.get('UserId', ''),
+        })
+        _log_result_action('SoftDeleteResult', 'Result', doc_id, {'branch': branch, 'semester': semester, 'academicYear': academic_year, 'usn': usn})
+        return jsonify({'success': True, 'message': f'Result for {usn} soft deleted.'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -746,7 +782,10 @@ def get_result():
         doc = doc_ref.get()
         if not doc.exists:
             return jsonify({'success': False, 'error': 'Result not found'}), 404
-        return jsonify({'success': True, 'result': doc.to_dict()})
+        result = doc.to_dict() or {}
+        if result.get(FIELD_IS_DELETED) is True:
+            return jsonify({'success': False, 'error': 'Result not found'}), 404
+        return jsonify({'success': True, 'result': result})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 

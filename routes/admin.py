@@ -4,9 +4,14 @@ import os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from constants import (
-    ROLE_ADMIN, COL_LOOKUPS, DOC_BRANCHES, DOC_SEMESTERS,
-    COL_USER_LOGIN, FIELD_USERNAME, FIELD_PASSWORD, FIELD_USER_ID,
-    FIELD_USER_ROLE, FIELD_IS_ACTIVE, FIELD_IS_DELETED
+    ROLE_ADMIN, ROLE_SUPER_ADMIN, ROLE_RESULT_ANALYSIS,
+    COL_LOOKUPS, DOC_BRANCHES, DOC_SEMESTERS,
+    COL_USER_LOGIN, COL_AUDIT_LOGS,
+    FIELD_USERNAME, FIELD_PASSWORD, FIELD_USER_ID,
+    FIELD_USER_ROLE, FIELD_IS_ACTIVE, FIELD_IS_DELETED,
+    FIELD_ACTION, FIELD_TARGET_TYPE, FIELD_TARGET_ID, FIELD_DETAILS,
+    FIELD_CREATED_AT, FIELD_DELETED_AT, FIELD_DELETED_BY,
+    FIELD_SAVED_BY
 )
 import uuid
 from firebase_init import get_db
@@ -18,16 +23,67 @@ from config_loader import (
 admin_bp = Blueprint('admin', __name__)
 
 
+def _is_admin_session():
+    return session.get('UserRole') in {ROLE_ADMIN, ROLE_SUPER_ADMIN}
+
+
+def _generate_user_id(db, role):
+    prefix = 'SA' if role == ROLE_SUPER_ADMIN else 'U'
+    docs = list(db.collection(COL_USER_LOGIN).stream())
+    ids = []
+    for doc in docs:
+        doc_id = doc.id or ''
+        if doc_id.startswith(f'{prefix}-'):
+            try:
+                ids.append(int(doc_id.split('-')[-1]))
+            except ValueError:
+                continue
+    next_num = max(ids) + 1 if ids else 1
+    return f'{prefix}-{next_num:05d}'
+
+
+def _log_audit(db, action, target_type, target_id, details, actor_user_id=None, actor_user_name=None, actor_role=None):
+    try:
+        db.collection(COL_AUDIT_LOGS).add({
+            FIELD_ACTION: action,
+            FIELD_TARGET_TYPE: target_type,
+            FIELD_TARGET_ID: target_id,
+            FIELD_DETAILS: details,
+            'ActorUserId': actor_user_id or '',
+            'ActorUserName': actor_user_name or '',
+            'ActorRole': actor_role or '',
+            FIELD_CREATED_AT: __import__('firebase_admin').firestore.SERVER_TIMESTAMP,
+        })
+    except Exception:
+        pass
+
+
 def admin_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
         if 'UserId' not in session:
-            # API routes must return JSON, not an HTML redirect
             if request.path.startswith('/api/'):
                 return jsonify({'success': False, 'error': 'Not authenticated'}), 401
             return redirect(url_for('home'))
-        if session.get('UserRole') != ROLE_ADMIN:
-            return jsonify({'success': False, 'error': 'Admin access required'}), 403
+        if not _is_admin_session():
+            if request.path.startswith('/api/'):
+                return jsonify({'success': False, 'error': 'Admin access required'}), 403
+            return redirect(url_for('home'))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def super_admin_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if 'UserId' not in session:
+            if request.path.startswith('/api/'):
+                return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+            return redirect(url_for('home'))
+        if session.get('UserRole') != ROLE_SUPER_ADMIN:
+            if request.path.startswith('/api/'):
+                return jsonify({'success': False, 'error': 'Super Admin access required'}), 403
+            return redirect(url_for('home'))
         return view(*args, **kwargs)
     return wrapped
 
@@ -45,7 +101,7 @@ def admin_teachers_page():
 
 
 @admin_bp.route('/admin/users')
-@admin_required
+@super_admin_required
 def admin_users_page():
     return render_template('admin_users.html', user_name=session.get('UserName', ''))
 
@@ -189,104 +245,133 @@ def remove_teacher():
 # ── User Management ───────────────────────────────────────────────────────────
 
 @admin_bp.route('/api/admin/users', methods=['GET'])
-@admin_required
+@super_admin_required
 def list_users():
     try:
         db = get_db()
         users_ref = db.collection(COL_USER_LOGIN)
         query = users_ref.where('IsDeleted', '==', False).stream()
-        
+
         users = []
         for doc in query:
             data = doc.to_dict()
             users.append({
-                'UserId': data.get(FIELD_USER_ID, ''),
+                'UserId': data.get(FIELD_USER_ID, doc.id),
                 'UserName': data.get(FIELD_USERNAME, ''),
                 'UserRole': data.get(FIELD_USER_ROLE, ''),
                 'IsActive': data.get(FIELD_IS_ACTIVE, False)
             })
-            
-        # Sort users alphabetically by username
+
         users.sort(key=lambda x: x['UserName'].lower())
-        
+
         return jsonify({'success': True, 'users': users})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @admin_bp.route('/api/admin/users', methods=['POST'])
-@admin_required
+@super_admin_required
 def add_user():
     data = request.get_json(silent=True) or {}
     username = (data.get('username') or '').strip()
     password = data.get('password') or ''
-    role = (data.get('role') or 'ResultAnalysis').strip()
-    
+    role = (data.get('role') or ROLE_RESULT_ANALYSIS).strip()
+
     if not username or not password:
         return jsonify({'success': False, 'error': 'Username and password are required.'}), 400
-        
+
+    if role not in {ROLE_RESULT_ANALYSIS, ROLE_ADMIN, ROLE_SUPER_ADMIN}:
+        return jsonify({'success': False, 'error': 'Invalid role.'}), 400
+
     try:
         db = get_db()
-        # Check if username already exists (active or inactive, but not deleted)
         existing_users = db.collection(COL_USER_LOGIN)\
             .where(FIELD_USERNAME, '==', username)\
             .where('IsDeleted', '==', False)\
             .stream()
-            
+
         for _ in existing_users:
             return jsonify({'success': False, 'error': 'Username already exists.'}), 409
-            
-        user_id = str(uuid.uuid4())
-        
+
+        user_id = _generate_user_id(db, role)
         user_data = {
             FIELD_USER_ID: user_id,
             FIELD_USERNAME: username,
             FIELD_PASSWORD: password,
             FIELD_USER_ROLE: role,
             FIELD_IS_ACTIVE: True,
-            FIELD_IS_DELETED: False
+            FIELD_IS_DELETED: False,
+            FIELD_SAVED_BY: session.get('UserId', ''),
         }
-        
-        # Use user_id as the document ID for cleaner structure
+
         db.collection(COL_USER_LOGIN).document(user_id).set(user_data)
-        
-        return jsonify({'success': True, 'message': f'User {username} added successfully.'})
+        _log_audit(
+            db, 'CreateUser', 'UserLogin', user_id,
+            {'username': username, 'role': role},
+            actor_user_id=session.get('UserId', ''),
+            actor_user_name=session.get('UserName', ''),
+            actor_role=session.get('UserRole', '')
+        )
+
+        return jsonify({'success': True, 'message': f'User {username} added successfully with ID {user_id}.'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @admin_bp.route('/api/admin/users/delete', methods=['DELETE'])
-@admin_required
+@super_admin_required
 def delete_user():
     user_id = request.args.get('userId', '').strip()
-    
+
     if not user_id:
         return jsonify({'success': False, 'error': 'User ID is required.'}), 400
-        
-    # Prevent self-deletion
+
     if user_id == session.get('UserId'):
         return jsonify({'success': False, 'error': 'You cannot delete your own account.'}), 403
-        
+
     try:
         db = get_db()
-        # Find user by ID
         user_ref = db.collection(COL_USER_LOGIN).document(user_id)
         doc = user_ref.get()
-        
+
         if not doc.exists:
-            # Maybe it wasn't saved with user_id as doc ID, so query by field
             query = db.collection(COL_USER_LOGIN).where(FIELD_USER_ID, '==', user_id).stream()
             docs = list(query)
             if not docs:
                 return jsonify({'success': False, 'error': 'User not found.'}), 404
             user_ref = docs[0].reference
-            
-        # Soft delete
+
         user_ref.update({
             FIELD_IS_DELETED: True,
-            FIELD_IS_ACTIVE: False
+            FIELD_IS_ACTIVE: False,
+            FIELD_DELETED_AT: __import__('firebase_admin').firestore.SERVER_TIMESTAMP,
+            FIELD_DELETED_BY: session.get('UserId', ''),
         })
-        
+
         return jsonify({'success': True, 'message': 'User removed successfully.'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@admin_bp.route('/api/admin/audit-logs', methods=['GET'])
+@super_admin_required
+def list_audit_logs():
+    try:
+        db = get_db()
+        logs = []
+        for doc in db.collection(COL_AUDIT_LOGS).stream():
+            data = doc.to_dict()
+            logs.append({
+                'id': doc.id,
+                'Action': data.get(FIELD_ACTION, ''),
+                'TargetType': data.get(FIELD_TARGET_TYPE, ''),
+                'TargetId': data.get(FIELD_TARGET_ID, ''),
+                'Details': data.get(FIELD_DETAILS, {}),
+                'ActorUserName': data.get('ActorUserName', ''),
+                'ActorRole': data.get('ActorRole', ''),
+                'createdAt': data.get(FIELD_CREATED_AT),
+            })
+        logs.sort(key=lambda x: str(x.get('createdAt') or ''), reverse=True)
+        return jsonify({'success': True, 'logs': logs})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500

@@ -8,6 +8,7 @@ COL_USER_LOGIN  = "UserLogin"
 COL_RESULTS     = "results"
 COL_LOOKUPS     = "lookups"
 COL_CONFIG      = "config"
+COL_AUDIT_LOGS  = "AuditLogs"
 
 # ── Firestore document names inside COL_LOOKUPS ───────────────────────────────
 DOC_BRANCHES        = "branches"
@@ -30,9 +31,20 @@ FIELD_USER_ID    = "UserId"
 FIELD_IS_ACTIVE  = "IsActive"
 FIELD_IS_DELETED = "IsDeleted"
 FIELD_USER_ROLE  = "UserRole"
+FIELD_ACTION     = "Action"
+FIELD_TARGET_TYPE = "TargetType"
+FIELD_TARGET_ID  = "TargetId"
+FIELD_DETAILS    = "Details"
+FIELD_CREATED_AT = "createdAt"
+FIELD_UPDATED_AT = "updatedAt"
+FIELD_DELETED_AT = "deletedAt"
+FIELD_DELETED_BY = "deletedBy"
+FIELD_SAVED_BY   = "savedBy"
 
 # ── Roles ─────────────────────────────────────────────────────────────────────
 ROLE_ADMIN = "Admin"
+ROLE_SUPER_ADMIN = "SuperAdmin"
+ROLE_RESULT_ANALYSIS = "ResultAnalysis"
 
 # ── Results document field names ─────────────────────────────────────────────
 FIELD_BRANCH        = "branch"

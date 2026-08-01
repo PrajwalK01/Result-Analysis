@@ -8,7 +8,7 @@ from constants           import (
     COL_USER_LOGIN,
     FIELD_USERNAME, FIELD_PASSWORD, FIELD_USER_ID,
     FIELD_USER_ROLE, FIELD_IS_ACTIVE, FIELD_IS_DELETED,
-    ROLE_ADMIN,
+    ROLE_ADMIN, ROLE_SUPER_ADMIN,
 )
 from config_loader import get_app_settings
 
@@ -89,7 +89,7 @@ def login():
             return jsonify({"success": False, "message": msg}), 401
 
         user_role = user.get(FIELD_USER_ROLE)
-        if user_role != allowed_role and user_role != ROLE_ADMIN:
+        if user_role != allowed_role and user_role not in {ROLE_ADMIN, ROLE_SUPER_ADMIN}:
             return jsonify({"success": False,
                             "message": "Access denied. Insufficient privileges."}), 403
 
@@ -112,7 +112,7 @@ def user_page():
         return redirect(url_for("home"))
     return render_template("user.html",
                             user_name=session.get("UserName", ""),
-                            is_admin=(session.get("UserRole") == "Admin"))
+                            is_admin=(session.get("UserRole") in {"Admin", "SuperAdmin"}))
 
 
 @login_bp.route("/logout")
