@@ -166,6 +166,22 @@ def login():
         session["UserRole"]    = user.get(FIELD_USER_ROLE, "")
         session["College"]     = user.get(FIELD_COLLEGE, college)
 
+        # Write login audit entry
+        try:
+            get_db().collection("AuditLogs").add({
+                "Action":        "Login",
+                "TargetType":    "UserLogin",
+                "TargetId":      user[FIELD_USER_ID],
+                "Details":       {"username": username, "college": college},
+                "ActorUserId":   user[FIELD_USER_ID],
+                "ActorUserName": user[FIELD_USERNAME],
+                "ActorRole":     user.get(FIELD_USER_ROLE, ""),
+                FIELD_COLLEGE:   college,
+                "createdAt":     __import__("firebase_admin").firestore.SERVER_TIMESTAMP,
+            })
+        except Exception:
+            pass
+
         return jsonify({"success": True, "message": "Login successful.",
                         "UserId": user[FIELD_USER_ID], "UserName": user[FIELD_USERNAME]})
 

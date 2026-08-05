@@ -136,9 +136,17 @@ def admin_teachers_page():
     return render_template('admin_teachers.html', user_name=session.get('UserName', ''))
 
 
-@admin_bp.route('/admin/users')
+@admin_bp.route('/admin/manage-admins')
 @super_admin_required
+def admin_manage_admins_page():
+    """SuperAdmin only — add/remove Admin accounts."""
+    return render_template('superadmin_manage_admins.html', user_name=session.get('UserName', ''))
+
+
+@admin_bp.route('/admin/users')
+@admin_required
 def admin_users_page():
+    """Admin only — add/remove ResultAnalysis (User) accounts."""
     return render_template('admin_users.html', user_name=session.get('UserName', ''))
 
 
@@ -286,10 +294,13 @@ def remove_teacher():
 
 
 # ── User Management ───────────────────────────────────────────────────────────
+# SuperAdmin → /api/admin/admins  (manages Admin accounts only)
+# Admin      → /api/admin/users   (manages ResultAnalysis accounts only)
 
-@admin_bp.route('/api/admin/users', methods=['GET'])
+@admin_bp.route('/api/admin/admins', methods=['GET'])
 @super_admin_required
-def list_users():
+def list_admins():
+    """SuperAdmin: list all Admin-role accounts in their college."""
     college = current_college()
     try:
         db = get_db()
@@ -297,17 +308,123 @@ def list_users():
                    .where(FIELD_COLLEGE,    '==', college)
                    .where(FIELD_IS_DELETED, '==', False)
                    .stream())
-
         users = []
         for doc in query:
             data = doc.to_dict()
-            users.append({
-                'UserId':   data.get(FIELD_USER_ID, doc.id),
-                'UserName': data.get(FIELD_USERNAME, ''),
-                'UserRole': data.get(FIELD_USER_ROLE, ''),
-                'IsActive': data.get(FIELD_IS_ACTIVE, False),
-            })
+            if data.get(FIELD_USER_ROLE) == ROLE_ADMIN:
+                users.append({
+                    'UserId':   data.get(FIELD_USER_ID, doc.id),
+                    'UserName': data.get(FIELD_USERNAME, ''),
+                    'UserRole': data.get(FIELD_USER_ROLE, ''),
+                    'IsActive': data.get(FIELD_IS_ACTIVE, False),
+                })
+        users.sort(key=lambda x: x['UserName'].lower())
+        return jsonify({'success': True, 'users': users})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
+
+@admin_bp.route('/api/admin/admins', methods=['POST'])
+@super_admin_required
+def add_admin():
+    """SuperAdmin: create a new Admin account in their college."""
+    college = current_college()
+    data = request.get_json(silent=True) or {}
+    username = (data.get('username') or '').strip()
+    password = data.get('password') or ''
+    if not username or not password:
+        return jsonify({'success': False, 'error': 'Username and password are required.'}), 400
+    try:
+        db = get_db()
+        for _ in (db.collection(COL_USER_LOGIN)
+                    .where(FIELD_COLLEGE,    '==', college)
+                    .where(FIELD_USERNAME,   '==', username)
+                    .where(FIELD_IS_DELETED, '==', False)
+                    .stream()):
+            return jsonify({'success': False, 'error': 'Username already exists.'}), 409
+        user_id = _generate_user_id(db, ROLE_ADMIN, college)
+        db.collection(COL_USER_LOGIN).document(user_id).set({
+            FIELD_USER_ID:    user_id,
+            FIELD_USERNAME:   username,
+            FIELD_PASSWORD:   password,
+            FIELD_USER_ROLE:  ROLE_ADMIN,
+            FIELD_IS_ACTIVE:  True,
+            FIELD_IS_DELETED: False,
+            FIELD_COLLEGE:    college,
+            FIELD_SAVED_BY:   session.get('UserId', ''),
+        })
+        _log_audit(db, 'CreateAdmin', 'UserLogin', user_id,
+                   {'username': username, 'role': ROLE_ADMIN},
+                   actor_user_id=session.get('UserId', ''),
+                   actor_user_name=session.get('UserName', ''),
+                   actor_role=session.get('UserRole', ''),
+                   college=college)
+        return jsonify({'success': True, 'message': f'Admin {username} created.'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@admin_bp.route('/api/admin/admins/delete', methods=['DELETE'])
+@super_admin_required
+def delete_admin():
+    """SuperAdmin: soft-delete an Admin account."""
+    college = current_college()
+    user_id = request.args.get('userId', '').strip()
+    if not user_id:
+        return jsonify({'success': False, 'error': 'User ID is required.'}), 400
+    if user_id == session.get('UserId'):
+        return jsonify({'success': False, 'error': 'You cannot delete your own account.'}), 403
+    try:
+        db = get_db()
+        user_ref = db.collection(COL_USER_LOGIN).document(user_id)
+        doc = user_ref.get()
+        if not doc.exists:
+            from firebase_admin.firestore import FieldFilter
+            docs = list(db.collection(COL_USER_LOGIN)
+                          .where(filter=FieldFilter(FIELD_USER_ID, '==', user_id))
+                          .where(filter=FieldFilter(FIELD_COLLEGE,  '==', college))
+                          .stream())
+            if not docs:
+                return jsonify({'success': False, 'error': 'Admin not found.'}), 404
+            user_ref = docs[0].reference
+            doc = docs[0]
+        target = doc.to_dict() or {}
+        if target.get(FIELD_COLLEGE) != college:
+            return jsonify({'success': False, 'error': 'Admin not found.'}), 404
+        if target.get(FIELD_USER_ROLE) != ROLE_ADMIN:
+            return jsonify({'success': False, 'error': 'Target is not an Admin account.'}), 400
+        user_ref.update({
+            FIELD_IS_DELETED: True,
+            FIELD_IS_ACTIVE:  False,
+            FIELD_DELETED_AT: __import__('firebase_admin').firestore.SERVER_TIMESTAMP,
+            FIELD_DELETED_BY: session.get('UserId', ''),
+        })
+        return jsonify({'success': True, 'message': 'Admin removed.'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@admin_bp.route('/api/admin/users', methods=['GET'])
+@admin_required
+def list_users():
+    """Admin: list all ResultAnalysis users in their college."""
+    college = current_college()
+    try:
+        db = get_db()
+        query = (db.collection(COL_USER_LOGIN)
+                   .where(FIELD_COLLEGE,    '==', college)
+                   .where(FIELD_IS_DELETED, '==', False)
+                   .stream())
+        users = []
+        for doc in query:
+            data = doc.to_dict()
+            if data.get(FIELD_USER_ROLE) == ROLE_RESULT_ANALYSIS:
+                users.append({
+                    'UserId':   data.get(FIELD_USER_ID, doc.id),
+                    'UserName': data.get(FIELD_USERNAME, ''),
+                    'UserRole': data.get(FIELD_USER_ROLE, ''),
+                    'IsActive': data.get(FIELD_IS_ACTIVE, False),
+                })
         users.sort(key=lambda x: x['UserName'].lower())
         return jsonify({'success': True, 'users': users})
     except Exception as e:
@@ -315,105 +432,81 @@ def list_users():
 
 
 @admin_bp.route('/api/admin/users', methods=['POST'])
-@super_admin_required
+@admin_required
 def add_user():
+    """Admin: create a new ResultAnalysis user. Cannot create Admin or higher."""
     college = current_college()
     data = request.get_json(silent=True) or {}
     username = (data.get('username') or '').strip()
     password = data.get('password') or ''
-    role = (data.get('role') or ROLE_RESULT_ANALYSIS).strip()
-
     if not username or not password:
         return jsonify({'success': False, 'error': 'Username and password are required.'}), 400
-
-    # SuperAdmin cannot be created from this endpoint —
-    # only the Creator flow creates the first SuperAdmin.
-    if role not in {ROLE_RESULT_ANALYSIS, ROLE_ADMIN}:
-        return jsonify({'success': False, 'error': 'Invalid role.'}), 400
-
     try:
         db = get_db()
-        # Uniqueness check is scoped to this college — two colleges can share
-        # a username without collision.
-        existing_users = (
-            db.collection(COL_USER_LOGIN)
-              .where(FIELD_COLLEGE,    '==', college)
-              .where(FIELD_USERNAME,   '==', username)
-              .where(FIELD_IS_DELETED, '==', False)
-              .stream()
-        )
-        for _ in existing_users:
+        for _ in (db.collection(COL_USER_LOGIN)
+                    .where(FIELD_COLLEGE,    '==', college)
+                    .where(FIELD_USERNAME,   '==', username)
+                    .where(FIELD_IS_DELETED, '==', False)
+                    .stream()):
             return jsonify({'success': False, 'error': 'Username already exists.'}), 409
-
-        user_id = _generate_user_id(db, role, college)
-        user_data = {
-            FIELD_USER_ID:   user_id,
-            FIELD_USERNAME:  username,
-            FIELD_PASSWORD:  password,
-            FIELD_USER_ROLE: role,
-            FIELD_IS_ACTIVE: True,
-            FIELD_IS_DELETED:False,
-            FIELD_COLLEGE:   college,
-            FIELD_SAVED_BY:  session.get('UserId', ''),
-        }
-
-        db.collection(COL_USER_LOGIN).document(user_id).set(user_data)
-        _log_audit(
-            db, 'CreateUser', 'UserLogin', user_id,
-            {'username': username, 'role': role},
-            actor_user_id=session.get('UserId', ''),
-            actor_user_name=session.get('UserName', ''),
-            actor_role=session.get('UserRole', ''),
-            college=college,
-        )
-
-        return jsonify({'success': True, 'message': f'User {username} added with ID {user_id}.'})
+        user_id = _generate_user_id(db, ROLE_RESULT_ANALYSIS, college)
+        db.collection(COL_USER_LOGIN).document(user_id).set({
+            FIELD_USER_ID:    user_id,
+            FIELD_USERNAME:   username,
+            FIELD_PASSWORD:   password,
+            FIELD_USER_ROLE:  ROLE_RESULT_ANALYSIS,
+            FIELD_IS_ACTIVE:  True,
+            FIELD_IS_DELETED: False,
+            FIELD_COLLEGE:    college,
+            FIELD_SAVED_BY:   session.get('UserId', ''),
+        })
+        _log_audit(db, 'CreateUser', 'UserLogin', user_id,
+                   {'username': username, 'role': ROLE_RESULT_ANALYSIS},
+                   actor_user_id=session.get('UserId', ''),
+                   actor_user_name=session.get('UserName', ''),
+                   actor_role=session.get('UserRole', ''),
+                   college=college)
+        return jsonify({'success': True, 'message': f'User {username} created.'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @admin_bp.route('/api/admin/users/delete', methods=['DELETE'])
-@super_admin_required
+@admin_required
 def delete_user():
+    """Admin: soft-delete a ResultAnalysis user only."""
     college = current_college()
     user_id = request.args.get('userId', '').strip()
-
     if not user_id:
         return jsonify({'success': False, 'error': 'User ID is required.'}), 400
-
     if user_id == session.get('UserId'):
         return jsonify({'success': False, 'error': 'You cannot delete your own account.'}), 403
-
     try:
         db = get_db()
         user_ref = db.collection(COL_USER_LOGIN).document(user_id)
         doc = user_ref.get()
-
         if not doc.exists:
-            # Fallback: search by UserId field
             from firebase_admin.firestore import FieldFilter
-            query = (db.collection(COL_USER_LOGIN)
-                       .where(filter=FieldFilter(FIELD_USER_ID, '==', user_id))
-                       .where(filter=FieldFilter(FIELD_COLLEGE, '==', college))
-                       .stream())
-            docs = list(query)
+            docs = list(db.collection(COL_USER_LOGIN)
+                          .where(filter=FieldFilter(FIELD_USER_ID, '==', user_id))
+                          .where(filter=FieldFilter(FIELD_COLLEGE,  '==', college))
+                          .stream())
             if not docs:
                 return jsonify({'success': False, 'error': 'User not found.'}), 404
             user_ref = docs[0].reference
             doc = docs[0]
-
-        # Verify the target user belongs to this college
         target_data = doc.to_dict() or {}
         if target_data.get(FIELD_COLLEGE) != college:
             return jsonify({'success': False, 'error': 'User not found.'}), 404
-
+        # Admin cannot delete Admin or SuperAdmin accounts
+        if target_data.get(FIELD_USER_ROLE) != ROLE_RESULT_ANALYSIS:
+            return jsonify({'success': False, 'error': 'You can only remove ResultAnalysis users.'}), 403
         user_ref.update({
             FIELD_IS_DELETED: True,
             FIELD_IS_ACTIVE:  False,
             FIELD_DELETED_AT: __import__('firebase_admin').firestore.SERVER_TIMESTAMP,
             FIELD_DELETED_BY: session.get('UserId', ''),
         })
-
         return jsonify({'success': True, 'message': 'User removed successfully.'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500

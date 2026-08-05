@@ -45,7 +45,7 @@
     </div>
   </header>
 
-  <!-- ── Admin nav tabs ── -->
+  <!-- ── Admin nav tabs (Admin role: subjects, teachers, users only) ── -->
   <nav class="tabs">
     <a href="{{ url_for('admin.admin_subjects_page') }}" class="tab">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -70,16 +70,6 @@
       </svg>
       Manage Users
     </a>
-    <a href="{{ url_for('admin.admin_audit_page') }}" class="tab">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-        <polyline points="14 2 14 8 20 8"/>
-        <line x1="16" y1="13" x2="8" y2="13"/>
-        <line x1="16" y1="17" x2="8" y2="17"/>
-        <polyline points="10 9 9 9 8 9"/>
-      </svg>
-      Audit Log
-    </a>
   </nav>
 
   <main class="content">
@@ -88,27 +78,20 @@
       <div class="admin-panel-header">
         <div>
           <h2 class="section-title">Manage Users</h2>
-          <p class="section-desc">Add new users with their credentials and roles. They will be able to log in to the system. Passwords are saved exactly as entered.</p>
+          <p class="section-desc">Add result-entry users for your college. These accounts can upload and view results.</p>
         </div>
       </div>
 
-      <!-- Add / Update form -->
+      <!-- Add form — no role dropdown, Admin can only create ResultAnalysis -->
       <div class="admin-form-box">
-        <div class="field-grid field-grid--3">
+        <div class="field-grid field-grid--2">
           <div class="field">
             <label for="newUsername">Username</label>
             <input id="newUsername" placeholder="e.g. staff_member" autocomplete="off">
           </div>
           <div class="field">
             <label for="newPassword">Password</label>
-            <input id="newPassword" type="text" placeholder="e.g. pass123" autocomplete="off">
-          </div>
-          <div class="field">
-            <label for="newUserRole">Role</label>
-            <select id="newUserRole">
-              <option value="ResultAnalysis">ResultAnalysis (Standard)</option>
-              <option value="Admin">Admin</option>
-            </select>
+            <input id="newPassword" type="text" placeholder="Set a password" autocomplete="off">
           </div>
         </div>
         <div class="actions">
@@ -140,11 +123,11 @@
         <table class="data-table" id="usersTable">
           <thead>
             <tr>
-              <th>#</th><th>Username</th><th>Role</th><th>Status</th><th>Action</th>
+              <th>#</th><th>Username</th><th>Status</th><th>Action</th>
             </tr>
           </thead>
           <tbody>
-            <tr><td colspan="5" class="table-empty">Loading…</td></tr>
+            <tr><td colspan="4" class="table-empty">Loading…</td></tr>
           </tbody>
         </table>
       </div>

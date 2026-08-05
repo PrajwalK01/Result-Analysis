@@ -1,92 +1,148 @@
-/* ── Toggle password visibility ── */
-document.getElementById("toggleEye").addEventListener("click", function () {
-  const input = document.getElementById("password");
-  const icon  = document.getElementById("eyeIcon");
-  const show  = input.type === "password";
+/* ── Two-step login flow ──────────────────────────────────────────────────────
+   Step 1: User enters college code → clicks Continue → step 2 slides in
+   Step 2: User enters username + password → clicks Sign In → POST /login
+   Creator: leaves college blank → Continue skips straight to step 2
+*/
 
-  input.type = show ? "text" : "password";
+document.addEventListener("DOMContentLoaded", function () {
 
-  icon.innerHTML = show
-    ? `<path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/>
-       <path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/>
-       <line x1="1" y1="1" x2="23" y2="23"/>`
-    : `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-       <circle cx="12" cy="12" r="3"/>`;
-});
+  // ── Element refs ──────────────────────────────────────────────────────────
+  const stepCollege     = document.getElementById("stepCollege");
+  const stepCredentials = document.getElementById("stepCredentials");
+  const collegeInput    = document.getElementById("college");
+  const collegeBadge    = document.getElementById("collegeBadge");
+  const collegeBadgeTxt = document.getElementById("collegeBadgeText");
+  const changeBtn       = document.getElementById("changeCollegeBtn");
+  const continueBtn     = document.getElementById("continueBtn");
+  const loginForm       = document.getElementById("loginForm");
+  const msgEl           = document.getElementById("message");
 
-/* ── Normalise college code input to lowercase ── */
-document.getElementById("college").addEventListener("input", function () {
-  this.value = this.value.toLowerCase().replace(/[^a-z0-9]/g, '');
-});
+  // ── Normalise college code to lowercase alphanumeric ─────────────────────
+  collegeInput.addEventListener("input", function () {
+    this.value = this.value.toLowerCase().replace(/[^a-z0-9]/g, "");
+  });
 
-/* ── Enter key submits form ── */
-document.getElementById("loginForm").addEventListener("submit", function (e) {
-  e.preventDefault();
-  doLogin();
-});
+  // ── Step 1 → Step 2: Continue button ─────────────────────────────────────
+  continueBtn.addEventListener("click", advanceToCredentials);
 
-/* ── Login handler ── */
-async function doLogin() {
-  const college   = document.getElementById("college").value.trim().toLowerCase();
-  const username  = document.getElementById("username").value.trim();
-  const password  = document.getElementById("password").value;
-  const msgEl     = document.getElementById("message");
-  const btn       = document.getElementById("loginBtn");
-  const btnText   = document.getElementById("loginBtnText");
-  const btnArrow  = document.getElementById("loginBtnArrow");
-  const spinner   = document.getElementById("loginSpinner");
+  // Also allow Enter on college field to advance
+  collegeInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") { e.preventDefault(); advanceToCredentials(); }
+  });
 
-  clearMessage(msgEl);
+  function advanceToCredentials() {
+    const code = collegeInput.value.trim().toLowerCase();
 
-  if (!username || !password) {
-    showMessage(msgEl, "Please enter your username and password.", "err");
-    return;
-  }
-
-  // Loading state
-  btn.disabled = true;
-  btnText.textContent = "Signing in…";
-  btnArrow.classList.add("hidden");
-  spinner.classList.remove("hidden");
-
-  try {
-    const res  = await fetch("/login", {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ college, username, password }),
-    });
-
-    const data = await res.json();
-
-    if (data.success) {
-      showMessage(msgEl, "✓ Login successful. Redirecting…", "ok");
-      btnText.textContent = "Redirecting…";
-      setTimeout(() => { window.location.href = "/user"; }, 600);
+    // Show the badge — "Creator" label when blank, code otherwise
+    if (code) {
+      collegeBadgeTxt.textContent = code.toUpperCase();
+      collegeBadge.title = "Logging in as: " + code;
     } else {
-      showMessage(msgEl, data.message || "Login failed.", "err");
-      resetBtn(btn, btnText, btnArrow, spinner);
-      document.querySelector(".login-card").classList.add("shake");
-      setTimeout(() => document.querySelector(".login-card").classList.remove("shake"), 500);
+      collegeBadgeTxt.textContent = "Creator (no college)";
     }
-  } catch (err) {
-    showMessage(msgEl, "Network error. Please check your connection.", "err");
-    resetBtn(btn, btnText, btnArrow, spinner);
+
+    // Hide step 1, show step 2
+    stepCollege.classList.add("hidden");
+    stepCredentials.classList.remove("hidden");
+
+    // Focus username field
+    document.getElementById("username").focus();
   }
-}
 
-function showMessage(el, text, type) {
-  el.textContent = text;
-  el.className   = `login-message login-message--${type}`;
-}
+  // ── "← Change" button goes back to step 1 ────────────────────────────────
+  changeBtn.addEventListener("click", function () {
+    stepCredentials.classList.add("hidden");
+    stepCollege.classList.remove("hidden");
+    document.getElementById("username").value = "";
+    document.getElementById("password").value = "";
+    clearMessage(msgEl);
+    collegeInput.focus();
+  });
 
-function clearMessage(el) {
-  el.textContent = "";
-  el.className   = "login-message hidden";
-}
+  // ── Password visibility toggle ────────────────────────────────────────────
+  document.getElementById("toggleEye").addEventListener("click", function () {
+    const input = document.getElementById("password");
+    const icon  = document.getElementById("eyeIcon");
+    const show  = input.type === "password";
+    input.type  = show ? "text" : "password";
+    icon.innerHTML = show
+      ? `<path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8
+                  a18.45 18.45 0 015.06-5.94"/>
+         <path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8
+                  a18.5 18.5 0 01-2.16 3.19"/>
+         <line x1="1" y1="1" x2="23" y2="23"/>`
+      : `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+         <circle cx="12" cy="12" r="3"/>`;
+  });
 
-function resetBtn(btn, btnText, btnArrow, spinner) {
-  btn.disabled = false;
-  btnText.textContent = "Sign In";
-  btnArrow.classList.remove("hidden");
-  spinner.classList.add("hidden");
-}
+  // ── Form submit (Sign In) ─────────────────────────────────────────────────
+  loginForm.addEventListener("submit", function (e) {
+    e.preventDefault();
+    doLogin();
+  });
+
+  async function doLogin() {
+    const college  = collegeInput.value.trim().toLowerCase();
+    const username = document.getElementById("username").value.trim();
+    const password = document.getElementById("password").value;
+    const btn      = document.getElementById("loginBtn");
+    const btnText  = document.getElementById("loginBtnText");
+    const btnArrow = document.getElementById("loginBtnArrow");
+    const spinner  = document.getElementById("loginSpinner");
+
+    clearMessage(msgEl);
+
+    if (!username || !password) {
+      showMessage(msgEl, "Please enter your username and password.", "err");
+      return;
+    }
+
+    // Loading state
+    btn.disabled        = true;
+    btnText.textContent = "Signing in…";
+    btnArrow.classList.add("hidden");
+    spinner.classList.remove("hidden");
+
+    try {
+      const res  = await fetch("/login", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ college, username, password }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        showMessage(msgEl, "✓ Login successful. Redirecting…", "ok");
+        btnText.textContent = "Redirecting…";
+        setTimeout(() => { window.location.href = "/user"; }, 600);
+      } else {
+        showMessage(msgEl, data.message || "Login failed.", "err");
+        resetBtn(btn, btnText, btnArrow, spinner);
+        document.querySelector(".login-card").classList.add("shake");
+        setTimeout(() => document.querySelector(".login-card").classList.remove("shake"), 500);
+      }
+    } catch (err) {
+      showMessage(msgEl, "Network error. Please check your connection.", "err");
+      resetBtn(btn, btnText, btnArrow, spinner);
+    }
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function showMessage(el, text, type) {
+    el.textContent = text;
+    el.className   = `login-message login-message--${type}`;
+  }
+
+  function clearMessage(el) {
+    el.textContent = "";
+    el.className   = "login-message hidden";
+  }
+
+  function resetBtn(btn, btnText, btnArrow, spinner) {
+    btn.disabled        = false;
+    btnText.textContent = "Sign In";
+    btnArrow.classList.remove("hidden");
+    spinner.classList.add("hidden");
+  }
+
+});
