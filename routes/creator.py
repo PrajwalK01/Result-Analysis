@@ -11,8 +11,6 @@ The Creator role:
 """
 
 import re
-import secrets
-import string
 from functools import wraps
 
 from flask import Blueprint, jsonify, render_template, request, session, redirect, url_for
@@ -55,12 +53,6 @@ def creator_required(view):
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _generate_password(length: int = 16) -> str:
-    """Generate a secure random password for the first SuperAdmin."""
-    alphabet = string.ascii_letters + string.digits + '!@#$%^&*'
-    return ''.join(secrets.choice(alphabet) for _ in range(length))
-
 
 def _generate_super_admin_id(db, college: str) -> str:
     """Generate college-scoped SuperAdmin user ID: {college}-SA-00001"""
@@ -119,17 +111,24 @@ def list_colleges():
 @creator_required
 def create_college():
     """
-    Body: { "collegeCode": "rv", "collegeName": "RV College of Engineering" }
+    Body: {
+        "collegeCode": "rv",
+        "collegeName": "RV College of Engineering",
+        "saUsername":  "rv_superadmin",
+        "saPassword":  "chosen_password"
+    }
 
     1. Validates the slug pattern.
     2. Checks uniqueness against Colleges/.
     3. Creates Colleges/{code} doc.
-    4. Generates the first SuperAdmin UserLogin doc with a random password.
-    5. Returns the credential ONCE — never stored in plaintext after this.
+    4. Creates first SuperAdmin UserLogin doc with the Creator-supplied password.
+    5. Returns confirmation (password is NOT echoed back).
     """
-    data        = request.get_json(silent=True) or {}
-    raw_code    = (data.get('collegeCode')  or '').strip().lower()
-    college_name = (data.get('collegeName') or '').strip()
+    data         = request.get_json(silent=True) or {}
+    raw_code     = (data.get('collegeCode')  or '').strip().lower()
+    college_name = (data.get('collegeName')  or '').strip()
+    sa_username  = (data.get('saUsername')   or '').strip()
+    sa_password  = (data.get('saPassword')   or '')
 
     # Validate slug
     if not _COLLEGE_CODE_RE.match(raw_code):
@@ -141,10 +140,17 @@ def create_college():
     if not college_name:
         return jsonify({'success': False, 'error': 'College name is required.'}), 400
 
+    if not sa_username:
+        return jsonify({'success': False, 'error': 'SuperAdmin username is required.'}), 400
+
+    if not sa_password or len(sa_password) < 6:
+        return jsonify({'success': False,
+                        'error': 'SuperAdmin password must be at least 6 characters.'}), 400
+
     try:
         db = get_db()
 
-        # Check uniqueness
+        # Check college code uniqueness
         existing = db.collection(COL_COLLEGES).document(raw_code).get()
         if existing.exists:
             return jsonify({'success': False,
@@ -158,20 +164,18 @@ def create_college():
             'createdBy':          session.get('UserId', ''),
         })
 
-        # Create first SuperAdmin
-        sa_id       = _generate_super_admin_id(db, raw_code)
-        sa_username = f'{raw_code}_superadmin'
-        sa_password = _generate_password()
+        # Create first SuperAdmin with Creator-supplied credentials
+        sa_id = _generate_super_admin_id(db, raw_code)
 
         db.collection(COL_USER_LOGIN).document(sa_id).set({
-            FIELD_USER_ID:   sa_id,
-            FIELD_USERNAME:  sa_username,
-            FIELD_PASSWORD:  sa_password,
-            FIELD_USER_ROLE: ROLE_SUPER_ADMIN,
-            FIELD_IS_ACTIVE: True,
-            FIELD_IS_DELETED:False,
-            FIELD_COLLEGE:   raw_code,
-            FIELD_SAVED_BY:  session.get('UserId', ''),
+            FIELD_USER_ID:    sa_id,
+            FIELD_USERNAME:   sa_username,
+            FIELD_PASSWORD:   sa_password,
+            FIELD_USER_ROLE:  ROLE_SUPER_ADMIN,
+            FIELD_IS_ACTIVE:  True,
+            FIELD_IS_DELETED: False,
+            FIELD_COLLEGE:    raw_code,
+            FIELD_SAVED_BY:   session.get('UserId', ''),
             FIELD_CREATED_AT: firestore.SERVER_TIMESTAMP,
         })
 
@@ -180,11 +184,12 @@ def create_college():
             'Action':        'OnboardCollege',
             'TargetType':    'College',
             'TargetId':      raw_code,
-            'Details':       {'collegeName': college_name, 'superAdminId': sa_id},
+            'Details':       {'collegeName': college_name, 'superAdminId': sa_id,
+                              'superAdminUsername': sa_username},
             'ActorUserId':   session.get('UserId', ''),
             'ActorUserName': session.get('UserName', ''),
             'ActorRole':     ROLE_CREATOR,
-            FIELD_COLLEGE:   '',   # Creator has no college
+            FIELD_COLLEGE:   '',
             FIELD_CREATED_AT: firestore.SERVER_TIMESTAMP,
         })
 
@@ -195,9 +200,7 @@ def create_college():
             'superAdmin': {
                 'userId':   sa_id,
                 'username': sa_username,
-                # Password shown ONCE — the caller must save it immediately.
-                'password': sa_password,
-                'note':     'Save this password now. It will not be shown again.',
+                # Password is NOT returned — Creator already knows it
             },
         })
     except Exception as e:

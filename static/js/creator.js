@@ -11,6 +11,21 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('dismissCredBtn').addEventListener('click', () => {
     document.getElementById('credentialBox').classList.add('hidden');
   });
+
+  // Password visibility toggle for SA password field
+  document.getElementById('toggleSaPassword').addEventListener('click', () => {
+    const input  = document.getElementById('newSaPassword');
+    const icon   = document.getElementById('saEyeIcon');
+    const show   = input.type === 'password';
+    input.type   = show ? 'text' : 'password';
+    icon.innerHTML = show
+      ? `<path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/>
+         <path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/>
+         <line x1="1" y1="1" x2="23" y2="23"/>`
+      : `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+         <circle cx="12" cy="12" r="3"/>`;
+  });
+
   loadColleges();
 });
 
@@ -26,16 +41,27 @@ async function loadColleges() {
 }
 
 async function onboardCollege() {
-  const code = document.getElementById('newCollegeCode').value.trim().toLowerCase();
-  const name = document.getElementById('newCollegeName').value.trim();
-  const btn  = document.getElementById('onboardBtn');
+  const code       = document.getElementById('newCollegeCode').value.trim().toLowerCase();
+  const name       = document.getElementById('newCollegeName').value.trim();
+  const saUsername = document.getElementById('newSaUsername').value.trim();
+  const saPassword = document.getElementById('newSaPassword').value;
+  const btn        = document.getElementById('onboardBtn');
 
+  // Validate
   if (!code || !name) {
-    showMsg('onboardMsg', 'College code and name are both required.', 'err');
+    showMsg('onboardMsg', 'College code and name are required.', 'err');
     return;
   }
   if (!/^[a-z0-9]{2,12}$/.test(code)) {
     showMsg('onboardMsg', 'College code must be 2–12 lowercase letters/digits.', 'err');
+    return;
+  }
+  if (!saUsername) {
+    showMsg('onboardMsg', 'SuperAdmin username is required.', 'err');
+    return;
+  }
+  if (!saPassword || saPassword.length < 6) {
+    showMsg('onboardMsg', 'SuperAdmin password must be at least 6 characters.', 'err');
     return;
   }
 
@@ -46,21 +72,24 @@ async function onboardCollege() {
     const res  = await fetch(API_COLLEGES, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ collegeCode: code, collegeName: name }),
+      body:    JSON.stringify({
+        collegeCode: code,
+        collegeName: name,
+        saUsername,
+        saPassword,
+      }),
     });
     const data = await res.json();
 
     if (data.success) {
       showMsg('onboardMsg', `✓ ${data.message}`, 'ok');
-      clearForm();
 
-      // Display credential once
-      const sa = data.superAdmin;
+      // Show confirmation (no password — Creator already knows it)
       document.getElementById('cred-code').textContent     = data.collegeCode;
-      document.getElementById('cred-username').textContent = sa.username;
-      document.getElementById('cred-password').textContent = sa.password;
+      document.getElementById('cred-username').textContent = data.superAdmin.username;
       document.getElementById('credentialBox').classList.remove('hidden');
 
+      clearForm();
       loadColleges();
     } else {
       showMsg('onboardMsg', data.error || 'Failed to onboard.', 'err');
@@ -97,6 +126,8 @@ async function toggleStatus(code, currentStatus) {
 function clearForm() {
   document.getElementById('newCollegeCode').value = '';
   document.getElementById('newCollegeName').value = '';
+  document.getElementById('newSaUsername').value  = '';
+  document.getElementById('newSaPassword').value  = '';
 }
 
 function renderTable() {
@@ -119,7 +150,7 @@ function renderTable() {
   }
 
   filtered.forEach((c, i) => {
-    const isActive   = c.status === 'Active';
+    const isActive    = c.status === 'Active';
     const statusBadge = isActive
       ? '<span class="badge badge--pass">Active</span>'
       : '<span class="badge badge--absent">Suspended</span>';

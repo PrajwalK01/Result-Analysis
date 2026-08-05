@@ -64,6 +64,36 @@
             <input id="newCollegeName" placeholder="e.g. RV College of Engineering" autocomplete="off">
           </div>
         </div>
+
+        <!-- SuperAdmin credentials — set manually by Creator -->
+        <div class="section-divider" style="margin:16px 0 12px;"><span>First SuperAdmin Account</span></div>
+        <p style="font-size:12px;color:var(--muted);margin:0 0 12px;">
+          Set the username and password for this college's first SuperAdmin.
+          You are responsible for sharing these securely.
+        </p>
+        <div class="field-grid field-grid--2">
+          <div class="field">
+            <label for="newSaUsername">SuperAdmin Username</label>
+            <input id="newSaUsername" placeholder="e.g. jvit_superadmin" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="newSaPassword">SuperAdmin Password</label>
+            <div style="position:relative;">
+              <input id="newSaPassword" type="password" placeholder="Set a strong password"
+                     autocomplete="new-password" style="width:100%;padding-right:38px;">
+              <button type="button" id="toggleSaPassword"
+                      style="position:absolute;right:8px;top:50%;transform:translateY(-50%);
+                             background:none;border:none;cursor:pointer;color:var(--muted);padding:0;"
+                      aria-label="Toggle password visibility">
+                <svg id="saEyeIcon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
         <div class="actions">
           <button id="onboardBtn" class="btn btn--primary">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -75,12 +105,12 @@
         </div>
         <div id="onboardMsg" class="message hidden"></div>
 
-        <!-- Credential display (shown once on success) -->
+        <!-- Confirmation box (shown once on success) -->
         <div id="credentialBox" class="hidden" style="
             margin-top:16px; padding:16px; border-radius:8px;
             background:var(--surface-2); border:1px solid var(--accent-2);">
           <p style="margin:0 0 8px; font-weight:600; color:var(--accent-2);">
-            ⚠ Save these credentials now — the password will not be shown again.
+            ✓ College onboarded successfully.
           </p>
           <table style="border-collapse:collapse;width:100%;font-size:13px;">
             <tr>
@@ -91,13 +121,9 @@
               <td style="padding:4px 12px 4px 0;color:var(--muted);white-space:nowrap;">SuperAdmin Username</td>
               <td id="cred-username" style="font-family:monospace;font-weight:700;color:var(--text);"></td>
             </tr>
-            <tr>
-              <td style="padding:4px 12px 4px 0;color:var(--muted);white-space:nowrap;">SuperAdmin Password</td>
-              <td id="cred-password" style="font-family:monospace;font-weight:700;color:var(--danger);letter-spacing:1px;"></td>
-            </tr>
           </table>
           <button id="dismissCredBtn" class="btn btn--ghost btn--sm" style="margin-top:10px;">
-            I have saved these credentials — dismiss
+            Dismiss
           </button>
         </div>
       </div>
