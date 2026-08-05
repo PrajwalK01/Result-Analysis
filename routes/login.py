@@ -177,9 +177,12 @@ def login():
 def user_page():
     if "UserId" not in session:
         return redirect(url_for("home"))
-    # Creator should be redirected to creator dashboard, not user page
+    # Creator → creator dashboard
     if session.get("UserRole") == ROLE_CREATOR:
         return redirect(url_for("creator.creator_page"))
+    # SuperAdmin → dedicated SuperAdmin dashboard
+    if session.get("UserRole") == ROLE_SUPER_ADMIN:
+        return redirect(url_for("admin.superadmin_dashboard"))
     return render_template("user.html",
                             user_name=session.get("UserName", ""),
                             is_admin=(session.get("UserRole") in {"Admin", "SuperAdmin"}))

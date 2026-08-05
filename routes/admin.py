@@ -114,6 +114,16 @@ def super_admin_required(view):
     return wrapped
 
 
+@admin_bp.route('/superadmin')
+@super_admin_required
+def superadmin_dashboard():
+    return render_template(
+        'superadmin_dashboard.html',
+        user_name=session.get('UserName', ''),
+        college=session.get('College', ''),
+    )
+
+
 @admin_bp.route('/admin/subjects')
 @admin_required
 def admin_subjects_page():
