@@ -11,7 +11,7 @@ from constants      import (
     FIELD_USN, FIELD_STUDENT_NAME,
     FIELD_ACTION, FIELD_TARGET_TYPE, FIELD_TARGET_ID, FIELD_DETAILS,
     FIELD_IS_DELETED, FIELD_DELETED_AT, FIELD_DELETED_BY,
-    FIELD_SAVED_BY,
+    FIELD_SAVED_BY, FIELD_COLLEGE,
     VTU_USN_LETTER_POSITIONS, VTU_USN_BRANCH_SLICE,
     OCR_DIGIT_TO_LETTER, VTU_EXAM_MONTH_PATTERN,
 )
@@ -23,39 +23,42 @@ from config_loader  import (
     get_subject_external_required,
     get_teacher_map,
 )
+from auth_helpers import current_college
 
 user_bp = Blueprint('user', __name__)
 
 
 def _log_result_action(action: str, target_type: str, target_id: str, details: dict):
+    """Write an audit log entry, scoped to the current user's college."""
     try:
         get_db().collection(COL_AUDIT_LOGS).add({
-            FIELD_ACTION: action,
+            FIELD_ACTION:      action,
             FIELD_TARGET_TYPE: target_type,
-            FIELD_TARGET_ID: target_id,
-            FIELD_DETAILS: details,
-            'ActorUserId': session.get('UserId', ''),
-            'ActorUserName': session.get('UserName', ''),
-            'ActorRole': session.get('UserRole', ''),
-            'createdAt': firestore.SERVER_TIMESTAMP,
+            FIELD_TARGET_ID:   target_id,
+            FIELD_DETAILS:     details,
+            'ActorUserId':     session.get('UserId', ''),
+            'ActorUserName':   session.get('UserName', ''),
+            'ActorRole':       session.get('UserRole', ''),
+            FIELD_COLLEGE:     session.get('College', ''),
+            'createdAt':       firestore.SERVER_TIMESTAMP,
         })
     except Exception:
         pass
 
 
-def _results_collection(academic_year: str, semester: str, branch: str) -> str:
-    """One Firestore collection per (academic year, semester, branch) —
-    e.g. '2024_result_sem6_cse'. Each combination gets its own physical
-    collection instead of every branch/year piling into one semester-wide
-    collection. Computed from whatever strings are submitted (no hardcoded
-    list), so nothing needs touching when a new year/branch/scheme appears."""
+def _results_collection(college: str, academic_year: str, semester: str, branch: str) -> str:
+    """One Firestore collection per (college, academic year, semester, branch).
+    e.g. 'jvit_2024_result_sem6_cse'.
+    The college slug comes from session['College'] — never from client input.
+    """
     def _slug(value, fallback):
         s = re.sub(r'[^A-Za-z0-9]+', '', str(value)).lower()
         return s or fallback
-    year_slug   = _slug(academic_year, 'unknownyear')
-    sem_slug    = _slug(semester,      'unknownsem')
-    branch_slug = _slug(branch,        'unknownbranch')
-    return f"{year_slug}_result_{sem_slug}_{branch_slug}"
+    college_slug = _slug(college,        'unknowncollege')
+    year_slug    = _slug(academic_year,  'unknownyear')
+    sem_slug     = _slug(semester,       'unknownsem')
+    branch_slug  = _slug(branch,         'unknownbranch')
+    return f"{college_slug}_{year_slug}_result_{sem_slug}_{branch_slug}"
 
 
 def login_required(view):
@@ -171,12 +174,14 @@ def _cell_state(raw):
     return int(digits), False
 
 
-def _parse_subject_table(pdf) -> list:
+def _parse_subject_table(pdf, college: str = '') -> list:
     """Extracts the marks table using pdfplumber's table detection — reliable
     against the real VTU results.vtu.ac.in layout, and against college sheets
-    that follow the same Code/Name/Internal/External/Total/Result columns."""
+    that follow the same Code/Name/Internal/External/Total/Result columns.
+    college: slug from session, used to load the college's own subject-credit map.
+    """
     subjects = []
-    credit_map = get_subject_credits()
+    credit_map = get_subject_credits(college=college)
 
     for page in pdf.pages:
         for table in page.extract_tables():
@@ -249,10 +254,12 @@ def _parse_subject_table(pdf) -> list:
     return subjects
 
 
-def parse_vtu_pdf(file_bytes: bytes) -> dict:
+def parse_vtu_pdf(file_bytes: bytes, college: str = '') -> dict:
     """Parse a VTU result PDF. Table-based extraction is the primary path
     (works for the official results.vtu.ac.in PDF and similarly structured
-    college sheets); OCR is only a fallback for scanned/photographed copies."""
+    college sheets); OCR is only a fallback for scanned/photographed copies.
+    college: slug from session, passed through to subject-credit lookups.
+    """
     result = {'usn': '', 'studentName': '', 'semester': '',
               'branch': '', 'academicYear': '', 'subjects': []}
 
@@ -266,7 +273,7 @@ def parse_vtu_pdf(file_bytes: bytes) -> dict:
             result['usn'] = header['usn']
             result['studentName'] = header['studentName']
 
-            subjects = _parse_subject_table(pdf)
+            subjects = _parse_subject_table(pdf, college=college)
             if subjects:
                 result['subjects'] = subjects
     except Exception:
@@ -317,7 +324,7 @@ def parse_vtu_pdf(file_bytes: bytes) -> dict:
 
         result['studentName'] = _extract_student_name_from_text(full_text, result['usn'])
 
-        credit_map = get_subject_credits()
+        credit_map = get_subject_credits(college=college)
         seen, lines = set(), full_text.split('\n')
         i = 0
         while i < len(lines):
@@ -422,15 +429,18 @@ def parse_vtu_pdf(file_bytes: bytes) -> dict:
 @user_bp.route('/api/config', methods=['GET'])
 @login_required
 def get_config():
-    """Serve grading config to the frontend so JS has zero hardcoding."""
+    """Serve grading config to the frontend so JS has zero hardcoding.
+    Subject credits and externalRequired are per-college; grading scale is global.
+    """
+    college = current_college()
     try:
         scheme      = get_scheme()
         grade_s     = get_grade_scale()
         class_s     = get_class_award()
         app_s       = get_app_settings()
-        branch_map  = get_branch_map()   # USN code → branch name, DB-driven
-        subject_credits        = get_subject_credits()
-        external_required_map  = get_subject_external_required()
+        branch_map  = get_branch_map()
+        subject_credits        = get_subject_credits(college=college)
+        external_required_map  = get_subject_external_required(college=college)
         return jsonify({
             'success':    True,
             'gradeScale': grade_s,
@@ -450,11 +460,13 @@ def get_config():
 @user_bp.route('/api/lookups', methods=['GET'])
 @login_required
 def get_lookups():
+    college = current_college()
     try:
         db = get_db()
-        branches  = db.collection(COL_LOOKUPS).document(DOC_BRANCHES).get()
-        semesters = db.collection(COL_LOOKUPS).document(DOC_SEMESTERS).get()
-        years     = db.collection(COL_LOOKUPS).document(DOC_ACADEMIC_YEARS).get()
+        # Lookups are per-college: lookups/{college}_branches etc.
+        branches  = db.collection(COL_LOOKUPS).document(f'{college}_{DOC_BRANCHES}').get()
+        semesters = db.collection(COL_LOOKUPS).document(f'{college}_{DOC_SEMESTERS}').get()
+        years     = db.collection(COL_LOOKUPS).document(f'{college}_{DOC_ACADEMIC_YEARS}').get()
         return jsonify({
             'success':       True,
             'branches':      sorted(branches.to_dict().get('values', []))  if branches.exists  else [],
@@ -470,6 +482,7 @@ def get_lookups():
 @user_bp.route('/api/analysis', methods=['GET'])
 @login_required
 def get_analysis():
+    college       = current_college()
     branch        = request.args.get(FIELD_BRANCH,        '').strip()
     semester      = request.args.get(FIELD_SEMESTER,      '').strip()
     academic_year = request.args.get(FIELD_ACADEMIC_YEAR, '').strip()
@@ -478,7 +491,7 @@ def get_analysis():
         return jsonify({'success': False,
                         'error': 'branch, semester and academicYear are required'}), 400
     try:
-        collection_name = _results_collection(academic_year, semester, branch)
+        collection_name = _results_collection(college, academic_year, semester, branch)
         docs = list(get_db().collection(collection_name).stream())
         active_docs = []
         for doc in docs:
@@ -488,7 +501,7 @@ def get_analysis():
             active_docs.append(data)
         if not active_docs:
             return jsonify({'success': True, 'students': [], 'message': 'No results found'})
-        teacher_map = get_teacher_map(branch, semester)
+        teacher_map = get_teacher_map(branch, semester, college=college)
         return jsonify({'success': True, 'students': active_docs, 'teacherMap': teacher_map})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -499,6 +512,7 @@ def get_analysis():
 @user_bp.route('/api/save-result', methods=['POST'])
 @login_required
 def save_result():
+    college = current_college()
     data = request.get_json(silent=True)
     required = [FIELD_BRANCH, FIELD_SEMESTER, FIELD_ACADEMIC_YEAR,
                 FIELD_USN, FIELD_STUDENT_NAME, 'subjects']
@@ -514,7 +528,7 @@ def save_result():
         max_per_subject   = scheme['maxMarksPerSubject']
         min_external_pass = scheme.get('minExternalPass', 18)
         min_internal_pass = scheme.get('minInternalPass', 22)
-        external_required_map = get_subject_external_required()
+        external_required_map = get_subject_external_required(college=college)
 
         enriched = []
         for s in subjects:
@@ -524,27 +538,18 @@ def save_result():
             code_val   = str(s.get('code', '')).strip().upper()
             name_val   = str(s.get('name', '')).strip()
             raw_result = str(s.get('result', '')).strip().upper()
-            # A, AB, W, X, NE, NA, - = non-attempt (not pass, not fail)
-            # Safety net: if frontend sends F but both marks are 0 and result
-            # from VTU page was genuinely absent, the raw_result would be 'A'.
-            # We never auto-promote F→A here — only explicit 'A' codes are trusted.
             NON_ATTEMPT = {'A', 'AB', 'W', 'X', 'NE', 'NA', '-', ''}
             is_absent  = raw_result in NON_ATTEMPT
 
-            total      = internal + external
+            total = internal + external
 
             if is_absent:
-                # Absent — no grade, no credit points, not counted as fail
                 gp, letter = 0, 'A'
                 res        = 'A'
                 credit_pts = 0
             else:
                 gp, letter = calc_grade(total)
 
-                # Pass requires BOTH:
-                # 1. External >= minExternalPass (default 18)
-                # 2. Internal >= minInternalPass (default 22)
-                # Either condition failing = FAIL, regardless of total
                 requires_external = external_required_map.get(code_val, True)
                 if requires_external and external < min_external_pass:
                     gp, letter = 0, 'F'
@@ -554,9 +559,9 @@ def save_result():
                 res        = 'P' if gp > 0 else 'F'
                 credit_pts = gp * credit
 
-            # Remember any credit a human confirms while saving
+            # Remember any credit a human confirms while saving (college-scoped)
             if credit > 0 and code_val:
-                upsert_subject_credit(code_val, name_val, credit)
+                upsert_subject_credit(code_val, name_val, credit, college=college)
 
             enriched.append({
                 'code':         code_val,
@@ -577,21 +582,15 @@ def save_result():
         total_credits       = sum(s['credit']       for s in enriched)
         total_credit_points = sum(s['creditPoints'] for s in enriched)
         sgpa       = round(total_credit_points / total_credits, 2) if total_credits > 0 else 0.0
-        # Percentage = SGPA × 10
         percentage = round(sgpa * 10, 2) if sgpa > 0 else 0.0
-        has_fail   = any(s['result'] == 'F' for s in enriched)   # 'A' is not a fail
+        has_fail   = any(s['result'] == 'F' for s in enriched)
         cls        = calc_class_awarded(has_fail, percentage)
 
-        # Deterministic document ID within this year+semester+branch
-        # collection: USN alone is enough now, since branch/year/semester
-        # are already implied by which collection the doc lives in.
-        # Re-uploading the same student's result UPDATES the existing
-        # document instead of creating a duplicate.
         def _slug(s):
             return re.sub(r'[^A-Za-z0-9]+', '', str(s)).upper()
 
         collection_name = _results_collection(
-            data[FIELD_ACADEMIC_YEAR], data[FIELD_SEMESTER], data[FIELD_BRANCH]
+            college, data[FIELD_ACADEMIC_YEAR], data[FIELD_SEMESTER], data[FIELD_BRANCH]
         )
         doc_id  = _slug(data[FIELD_USN])
         doc_ref = get_db().collection(collection_name).document(doc_id)
@@ -603,6 +602,7 @@ def save_result():
             FIELD_ACADEMIC_YEAR: data[FIELD_ACADEMIC_YEAR].strip(),
             FIELD_USN:           data[FIELD_USN].strip().upper(),
             FIELD_STUDENT_NAME:  data[FIELD_STUDENT_NAME].strip(),
+            FIELD_COLLEGE:       college,
             'subjects':           enriched,
             'numSubjects':        num_subjects,
             'sumTotal':           sum_total,
@@ -622,13 +622,16 @@ def save_result():
         doc_ref.set(record, merge=True)
         _log_result_action(
             'SaveResult', 'Result', doc_id,
-            {'branch': data[FIELD_BRANCH].strip(), 'semester': data[FIELD_SEMESTER].strip(), 'academicYear': data[FIELD_ACADEMIC_YEAR].strip(), 'usn': data[FIELD_USN].strip().upper()}
+            {'branch': data[FIELD_BRANCH].strip(), 'semester': data[FIELD_SEMESTER].strip(),
+             'academicYear': data[FIELD_ACADEMIC_YEAR].strip(),
+             'usn': data[FIELD_USN].strip().upper(), 'college': college}
         )
 
+        # Per-college lookups
         for doc_name, val in [
-            (DOC_BRANCHES,      data[FIELD_BRANCH]),
-            (DOC_SEMESTERS,     data[FIELD_SEMESTER]),
-            (DOC_ACADEMIC_YEARS,data[FIELD_ACADEMIC_YEAR]),
+            (f'{college}_{DOC_BRANCHES}',       data[FIELD_BRANCH]),
+            (f'{college}_{DOC_SEMESTERS}',      data[FIELD_SEMESTER]),
+            (f'{college}_{DOC_ACADEMIC_YEARS}', data[FIELD_ACADEMIC_YEAR]),
         ]:
             get_db().collection(COL_LOOKUPS).document(doc_name).set(
                 {'values': firestore.ArrayUnion([val.strip()])}, merge=True
@@ -649,13 +652,14 @@ def save_result():
 @user_bp.route('/api/parse-pdf', methods=['POST'])
 @login_required
 def parse_pdf():
+    college = current_college()
     if 'file' not in request.files:
         return jsonify({'success': False, 'error': 'No file uploaded'}), 400
     f = request.files['file']
     if not f.filename.lower().endswith('.pdf'):
         return jsonify({'success': False, 'error': 'Only PDF files are supported'}), 400
     try:
-        parsed = parse_vtu_pdf(f.read())
+        parsed = parse_vtu_pdf(f.read(), college=college)
         if not parsed['usn'] and not parsed['subjects']:
             return jsonify({'success': False,
                             'error': 'Could not extract data. PDF may be heavily watermarked or scanned.'}), 422
@@ -680,16 +684,17 @@ def parse_pdf():
 @user_bp.route('/api/resolve-import', methods=['POST'])
 @login_required
 def resolve_import():
-    """Enriches data scraped by the bookmarklet/browser extension with
-    server-known info: branch (from USN) and credit (from the admin-managed
-    subject table) — the same enrichment PDF uploads already get."""
+    """Enriches data scraped by the bookmarklet with server-known info:
+    branch (from USN) and credit (from the college's admin-managed subject table).
+    """
+    college = current_college()
     data = request.get_json(silent=True) or {}
     usn = (data.get('usn') or '').strip().upper()
     subjects = data.get('subjects') or []
 
     try:
         branch = usn_to_branch(usn) if usn else ''
-        credit_map = get_subject_credits()
+        credit_map = get_subject_credits(college=college)
 
         enriched_subjects = []
         for s in subjects:
@@ -697,13 +702,11 @@ def resolve_import():
             credit = credit_map.get(code, 0)
             is_defined = code in credit_map
             raw_result = str(s.get('result', '')).strip().upper()
-            # Normalise VTU result codes — anything that isn't P or F is
-            # treated as a non-attempt (Absent, Withheld, Not Eligible, etc.)
             NON_ATTEMPT = {'A', 'AB', 'W', 'X', 'NE', 'NA', '-', ''}
             if raw_result in NON_ATTEMPT:
                 norm_result = raw_result if raw_result else 'A'
             else:
-                norm_result = raw_result  # P or F as-is
+                norm_result = raw_result
             enriched_subjects.append({
                 **s,
                 'code':   code,
@@ -725,7 +728,8 @@ def resolve_import():
 @user_bp.route('/api/delete-result', methods=['DELETE'])
 @login_required
 def delete_result():
-    """Delete a single student result document."""
+    """Soft-delete a single student result document."""
+    college       = current_college()
     branch        = request.args.get('branch',        '').strip()
     semester      = request.args.get('semester',      '').strip()
     academic_year = request.args.get('academicYear',  '').strip()
@@ -738,7 +742,7 @@ def delete_result():
         def _slug(s):
             return re.sub(r'[^A-Za-z0-9]+', '', str(s)).upper()
 
-        collection_name = _results_collection(academic_year, semester, branch)
+        collection_name = _results_collection(college, academic_year, semester, branch)
         doc_id  = _slug(usn)
         doc_ref = get_db().collection(collection_name).document(doc_id)
         if not doc_ref.get().exists:
@@ -753,7 +757,9 @@ def delete_result():
             FIELD_DELETED_AT: firestore.SERVER_TIMESTAMP,
             FIELD_DELETED_BY: session.get('UserId', ''),
         })
-        _log_result_action('SoftDeleteResult', 'Result', doc_id, {'branch': branch, 'semester': semester, 'academicYear': academic_year, 'usn': usn})
+        _log_result_action('SoftDeleteResult', 'Result', doc_id,
+                           {'branch': branch, 'semester': semester,
+                            'academicYear': academic_year, 'usn': usn, 'college': college})
         return jsonify({'success': True, 'message': f'Result for {usn} soft deleted.'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -765,6 +771,7 @@ def delete_result():
 @login_required
 def get_result():
     """Fetch a single student result document for editing."""
+    college       = current_college()
     branch        = request.args.get('branch',        '').strip()
     semester      = request.args.get('semester',      '').strip()
     academic_year = request.args.get('academicYear',  '').strip()
@@ -777,7 +784,7 @@ def get_result():
         def _slug(s):
             return re.sub(r'[^A-Za-z0-9]+', '', str(s)).upper()
 
-        collection_name = _results_collection(academic_year, semester, branch)
+        collection_name = _results_collection(college, academic_year, semester, branch)
         doc_ref = get_db().collection(collection_name).document(_slug(usn))
         doc = doc_ref.get()
         if not doc.exists:
@@ -796,9 +803,10 @@ def get_result():
 @login_required
 def fix_absent():
     """Scan all results for the given branch/semester/year and correct any
-    subject where result='F' but both internal AND external marks are 0,
-    which is the fingerprint of an absent subject saved before the fix.
-    Updates those subjects to result='A' and recomputes SGPA/percentage."""
+    subject where result='F' but both internal AND external marks are 0.
+    Scoped to the logged-in user's college.
+    """
+    college       = current_college()
     data          = request.get_json(silent=True) or {}
     branch        = data.get('branch',        '').strip()
     semester      = data.get('semester',      '').strip()
@@ -808,7 +816,7 @@ def fix_absent():
         return jsonify({'success': False, 'error': 'branch, semester and academicYear required'}), 400
 
     try:
-        collection_name = _results_collection(academic_year, semester, branch)
+        collection_name = _results_collection(college, academic_year, semester, branch)
         docs = list(get_db().collection(collection_name).stream())
         fixed_students = 0
         fixed_subjects = 0

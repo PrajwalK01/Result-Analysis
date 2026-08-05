@@ -8,14 +8,18 @@ from constants           import (
     COL_USER_LOGIN,
     FIELD_USERNAME, FIELD_PASSWORD, FIELD_USER_ID,
     FIELD_USER_ROLE, FIELD_IS_ACTIVE, FIELD_IS_DELETED,
-    ROLE_ADMIN, ROLE_SUPER_ADMIN,
+    FIELD_COLLEGE,
+    ROLE_ADMIN, ROLE_SUPER_ADMIN, ROLE_CREATOR,
 )
 from config_loader import get_app_settings
 
 login_bp = Blueprint("login", __name__)
 
 # ── Brute-force throttle (settings from DB / env) ────────────────────────────
+# Key format:  "{college}:{username}"  — prevents cross-college lockout bleed.
+# Creator (no college) uses ":creator:{username}".
 _failed_attempts: dict = {}
+
 
 def _settings():
     """Load lockout settings from DB config (cached)."""
@@ -26,21 +30,33 @@ def _settings():
         s.get("allowedRole", "ResultAnalysis"),
     )
 
-def _is_locked_out(username: str):
+
+def _lockout_key(college: str, username: str) -> str:
+    """Unique per-college:username key to prevent cross-college bleed."""
+    prefix = college.lower() if college else ":creator"
+    return f"{prefix}:{username.lower()}"
+
+
+def _is_locked_out(college: str, username: str):
     max_attempts, lockout_secs, _ = _settings()
     now   = time.time()
-    times = [t for t in _failed_attempts.get(username, []) if now - t < lockout_secs]
-    _failed_attempts[username] = times
+    key   = _lockout_key(college, username)
+    times = [t for t in _failed_attempts.get(key, []) if now - t < lockout_secs]
+    _failed_attempts[key] = times
     if len(times) >= max_attempts:
         remaining = int(lockout_secs - (now - min(times)))
         return True, max(remaining, 1)
     return False, 0
 
-def _record_failure(username: str):
-    _failed_attempts.setdefault(username, []).append(time.time())
 
-def _clear_failures(username: str):
-    _failed_attempts.pop(username, None)
+def _record_failure(college: str, username: str):
+    key = _lockout_key(college, username)
+    _failed_attempts.setdefault(key, []).append(time.time())
+
+
+def _clear_failures(college: str, username: str):
+    key = _lockout_key(college, username)
+    _failed_attempts.pop(key, None)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -48,6 +64,7 @@ def _clear_failures(username: str):
 @login_bp.route("/login", methods=["POST"])
 def login():
     data     = request.get_json(silent=True) or {}
+    college  = (data.get("college")  or "").strip().lower()
     username = (data.get("username") or "").strip()
     password = data.get("password") or ""
 
@@ -56,7 +73,7 @@ def login():
     if len(username) > 64 or len(password) > 128:
         return jsonify({"success": False, "message": "Invalid input length."}), 400
 
-    locked, secs = _is_locked_out(username)
+    locked, secs = _is_locked_out(college, username)
     if locked:
         mins = (secs + 59) // 60
         return jsonify({"success": False,
@@ -65,10 +82,55 @@ def login():
     max_attempts, _, allowed_role = _settings()
 
     try:
-        db    = get_db()
+        db = get_db()
+
+        # Creator has no college — special-case query (no College filter)
+        # We first check without college filter if no college submitted,
+        # then verify the role is Creator.
+        if not college:
+            # Attempt Creator login (no college in payload)
+            query = (
+                db.collection(COL_USER_LOGIN)
+                .where(filter=FieldFilter(FIELD_USERNAME, "==", username))
+                .where(filter=FieldFilter(FIELD_IS_ACTIVE, "==", True))
+                .stream()
+            )
+            user = None
+            for doc in query:
+                candidate = doc.to_dict()
+                if candidate.get(FIELD_IS_DELETED) is False:
+                    user = candidate
+                    break
+
+            # Only allow Creator role when no college is submitted
+            if user and user.get(FIELD_USER_ROLE) == ROLE_CREATOR:
+                if user.get(FIELD_PASSWORD) != password:
+                    _record_failure(college, username)
+                    left = max_attempts - len(_failed_attempts.get(_lockout_key(college, username), []))
+                    msg  = "Invalid username or password."
+                    if left <= 2:
+                        msg += f" {max(left, 0)} attempt(s) remaining before lockout."
+                    return jsonify({"success": False, "message": msg}), 401
+
+                _clear_failures(college, username)
+                session.permanent   = True
+                session["UserId"]   = user[FIELD_USER_ID]
+                session["UserName"] = user[FIELD_USERNAME]
+                session["UserRole"] = ROLE_CREATOR
+                # Creator has no College in session
+                return jsonify({"success": True, "message": "Login successful.",
+                                "UserId": user[FIELD_USER_ID], "UserName": user[FIELD_USERNAME],
+                                "UserRole": ROLE_CREATOR})
+
+            # If no college given and no Creator found, require college field
+            return jsonify({"success": False,
+                            "message": "College code is required for this account."}), 400
+
+        # Normal college-scoped login
         query = (
             db.collection(COL_USER_LOGIN)
-            .where(filter=FieldFilter(FIELD_USERNAME, "==", username))
+            .where(filter=FieldFilter(FIELD_COLLEGE,   "==", college))
+            .where(filter=FieldFilter(FIELD_USERNAME,  "==", username))
             .where(filter=FieldFilter(FIELD_IS_ACTIVE, "==", True))
             .stream()
         )
@@ -81,23 +143,28 @@ def login():
                 break
 
         if not user or user.get(FIELD_PASSWORD) != password:
-            _record_failure(username)
-            left = max_attempts - len(_failed_attempts.get(username, []))
-            msg  = "Invalid username or password."
+            _record_failure(college, username)
+            left = max_attempts - len(_failed_attempts.get(_lockout_key(college, username), []))
+            msg  = "Invalid college code, username, or password."
             if left <= 2:
                 msg += f" {max(left, 0)} attempt(s) remaining before lockout."
             return jsonify({"success": False, "message": msg}), 401
 
         user_role = user.get(FIELD_USER_ROLE)
+        # Creator must never log in via the college path
+        if user_role == ROLE_CREATOR:
+            return jsonify({"success": False,
+                            "message": "Invalid college code, username, or password."}), 401
         if user_role != allowed_role and user_role not in {ROLE_ADMIN, ROLE_SUPER_ADMIN}:
             return jsonify({"success": False,
                             "message": "Access denied. Insufficient privileges."}), 403
 
-        _clear_failures(username)
+        _clear_failures(college, username)
         session.permanent      = True
         session["UserId"]      = user[FIELD_USER_ID]
         session["UserName"]    = user[FIELD_USERNAME]
         session["UserRole"]    = user.get(FIELD_USER_ROLE, "")
+        session["College"]     = user.get(FIELD_COLLEGE, college)
 
         return jsonify({"success": True, "message": "Login successful.",
                         "UserId": user[FIELD_USER_ID], "UserName": user[FIELD_USERNAME]})
@@ -110,6 +177,9 @@ def login():
 def user_page():
     if "UserId" not in session:
         return redirect(url_for("home"))
+    # Creator should be redirected to creator dashboard, not user page
+    if session.get("UserRole") == ROLE_CREATOR:
+        return redirect(url_for("creator.creator_page"))
     return render_template("user.html",
                             user_name=session.get("UserName", ""),
                             is_admin=(session.get("UserRole") in {"Admin", "SuperAdmin"}))

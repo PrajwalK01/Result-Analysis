@@ -6,13 +6,17 @@ document.getElementById("toggleEye").addEventListener("click", function () {
 
   input.type = show ? "text" : "password";
 
-  // Swap icon: open eye ↔ eye-off
   icon.innerHTML = show
     ? `<path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/>
        <path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/>
        <line x1="1" y1="1" x2="23" y2="23"/>`
     : `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
        <circle cx="12" cy="12" r="3"/>`;
+});
+
+/* ── Normalise college code input to lowercase ── */
+document.getElementById("college").addEventListener("input", function () {
+  this.value = this.value.toLowerCase().replace(/[^a-z0-9]/g, '');
 });
 
 /* ── Enter key submits form ── */
@@ -23,6 +27,7 @@ document.getElementById("loginForm").addEventListener("submit", function (e) {
 
 /* ── Login handler ── */
 async function doLogin() {
+  const college   = document.getElementById("college").value.trim().toLowerCase();
   const username  = document.getElementById("username").value.trim();
   const password  = document.getElementById("password").value;
   const msgEl     = document.getElementById("message");
@@ -48,7 +53,7 @@ async function doLogin() {
     const res  = await fetch("/login", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ username, password }),
+      body:    JSON.stringify({ college, username, password }),
     });
 
     const data = await res.json();
@@ -60,7 +65,6 @@ async function doLogin() {
     } else {
       showMessage(msgEl, data.message || "Login failed.", "err");
       resetBtn(btn, btnText, btnArrow, spinner);
-      // Shake the card on error
       document.querySelector(".login-card").classList.add("shake");
       setTimeout(() => document.querySelector(".login-card").classList.remove("shake"), 500);
     }

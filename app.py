@@ -1,8 +1,9 @@
 import os
 from flask import Flask, render_template
-from routes.login import login_bp
-from routes.user  import user_bp
-from routes.admin import admin_bp
+from routes.login   import login_bp
+from routes.user    import user_bp
+from routes.admin   import admin_bp
+from routes.creator import creator_bp
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -25,6 +26,7 @@ app.secret_key = _secret
 app.register_blueprint(login_bp)
 app.register_blueprint(user_bp)
 app.register_blueprint(admin_bp)
+app.register_blueprint(creator_bp)
 
 
 @app.route("/")

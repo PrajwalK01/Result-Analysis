@@ -1,8 +1,19 @@
 """
 Loads application configuration from Firestore config/ collection.
 Falls back to constants.py defaults if a document is missing.
-Results are cached in-process for the lifetime of the request worker.
+Results are cached in-process with a 5-minute TTL.
 Call invalidate_cache() to force a reload.
+
+Phase 4 — per-college config:
+  Subject credits and teacher assignments are now stored at
+  config/{docName}_{college}  (e.g. config/subjectCredits_jvit)
+  so each college has its own isolated subject/teacher lists.
+
+  The cache key is therefore "{doc_name}:{college}" — colleges can never
+  read each other's cached subject lists.
+
+  Grade scale, class award, scheme, branch codes, and app settings remain
+  global (all VTU-affiliated, single grading standard).
 """
 
 import time
@@ -20,36 +31,57 @@ _CACHE_TTL = 300   # seconds
 _cache: dict = {}
 
 
-def _get(doc_name: str, default):
-    """Fetch a config document from Firestore, using cache."""
+def _cache_key(doc_name: str, college: str = '') -> str:
+    """Cache key format: '{doc_name}:{college}' for per-college docs,
+    just '{doc_name}' for global docs."""
+    return f"{doc_name}:{college}" if college else doc_name
+
+
+def _get(doc_name: str, default, college: str = ''):
+    """Fetch a config document from Firestore, using cache.
+    For per-college docs (when college is provided), the Firestore document
+    name is '{doc_name}_{college}'; for global docs it's just '{doc_name}'.
+    """
+    key = _cache_key(doc_name, college)
     now = time.time()
-    if doc_name in _cache and now - _cache[doc_name]['ts'] < _CACHE_TTL:
-        return _cache[doc_name]['data']
+    if key in _cache and now - _cache[key]['ts'] < _CACHE_TTL:
+        return _cache[key]['data']
+
+    # Determine the actual Firestore document name
+    firestore_doc_name = f"{doc_name}_{college}" if college else doc_name
 
     try:
         from firebase_init import get_db
         db  = get_db()
-        doc = db.collection(COL_CONFIG).document(doc_name).get()
+        doc = db.collection(COL_CONFIG).document(firestore_doc_name).get()
         if doc.exists:
             data = doc.to_dict()
         else:
-            # Seed the document with defaults on first run
-            db.collection(COL_CONFIG).document(doc_name).set(
-                default if isinstance(default, dict) else {"values": default}
-            )
+            # Seed the document with defaults on first run (global docs only)
+            if not college:
+                db.collection(COL_CONFIG).document(firestore_doc_name).set(
+                    default if isinstance(default, dict) else {"values": default}
+                )
             data = default if isinstance(default, dict) else {"values": default}
     except Exception:
         data = default if isinstance(default, dict) else {"values": default}
 
-    _cache[doc_name] = {'data': data, 'ts': now}
+    _cache[key] = {'data': data, 'ts': now}
     return data
 
 
-def invalidate_cache():
-    _cache.clear()
+def invalidate_cache(college: str = ''):
+    """Invalidate cache. If college is given, only clear that college's
+    per-college entries. Otherwise clear everything."""
+    if college:
+        keys_to_delete = [k for k in _cache if k.endswith(f':{college}')]
+        for k in keys_to_delete:
+            del _cache[k]
+    else:
+        _cache.clear()
 
 
-# ── Public accessors ─────────────────────────────────────────────────────────
+# ── Global accessors (no college scope) ──────────────────────────────────────
 
 def get_grade_scale() -> list:
     """Returns list of {min, max, grade, letter} dicts sorted high→low."""
@@ -86,34 +118,42 @@ def get_app_settings() -> dict:
     return {**DEFAULT_APP_SETTINGS, **data}
 
 
-def get_subject_credits_detailed() -> dict:
+# ── Per-college accessors ─────────────────────────────────────────────────────
+
+def get_subject_credits_detailed(college: str = '') -> dict:
     """Returns {code: {'name': str, 'credit': int}} — full records, for the
-    admin UI. Use get_subject_credits() instead when you only need the credit."""
-    data = _get(DOC_SUBJECT_CREDITS, {"values": {}})
+    admin UI. Use get_subject_credits() instead when you only need the credit.
+    college: the college slug from session (e.g. 'jvit').
+    """
+    data = _get(DOC_SUBJECT_CREDITS, {"values": {}}, college=college)
     return data.get("values", {}) if "values" in data else data
 
 
-def get_subject_credits() -> dict:
+def get_subject_credits(college: str = '') -> dict:
     """{code: credit} shortcut used by the PDF parser and save-result flow."""
-    detailed = get_subject_credits_detailed()
+    detailed = get_subject_credits_detailed(college=college)
     return {code: rec.get("credit", 0) for code, rec in detailed.items()}
 
 
-def upsert_subject_credit(code: str, name: str, credit: int, external_required=None):
+def upsert_subject_credit(code: str, name: str, credit: int, external_required=None,
+                           college: str = ''):
     """Admin adds/updates a subject's credit. Uses a dot-path field-level
     merge so only this one subject's key is touched — never overwrites
-    other subjects that were saved concurrently or by a different call."""
+    other subjects that were saved concurrently or by a different call.
+    college: the college slug from session.
+    """
     code = (code or '').strip().upper()
     if not code or credit is None:
         return
     from firebase_init import get_db
     db = get_db()
-    doc_ref = db.collection(COL_CONFIG).document(DOC_SUBJECT_CREDITS)
+    firestore_doc_name = f"{DOC_SUBJECT_CREDITS}_{college}" if college else DOC_SUBJECT_CREDITS
+    doc_ref = db.collection(COL_CONFIG).document(firestore_doc_name)
 
     # Preserve the subject's existing name and externalRequired flag
     # when called automatically from save-result (external_required=None).
-    existing_name     = name or ''
-    ext_req_val       = True
+    existing_name = name or ''
+    ext_req_val   = True
     snap = doc_ref.get()
     if snap.exists:
         existing = snap.to_dict().get('values', {}).get(code, {})
@@ -125,7 +165,6 @@ def upsert_subject_credit(code: str, name: str, credit: int, external_required=N
             ext_req_val = bool(external_required)
 
     # Write ONLY this subject's sub-fields using dot-path + merge=True.
-    # This is a true field-level write — other subjects are never touched.
     doc_ref.set({
         "values": {
             code: {
@@ -135,27 +174,30 @@ def upsert_subject_credit(code: str, name: str, credit: int, external_required=N
             }
         }
     }, merge=True)
-    invalidate_cache()
+    invalidate_cache(college=college)
 
 
-def get_subject_external_required() -> dict:
+def get_subject_external_required(college: str = '') -> dict:
     """{code: bool} — whether the external min-pass rule applies to this
     subject. Defaults to True (VTU's normal rule) for any subject that
-    hasn't explicitly had it set."""
-    detailed = get_subject_credits_detailed()
+    hasn't explicitly had it set.
+    college: the college slug from session.
+    """
+    detailed = get_subject_credits_detailed(college=college)
     return {code: rec.get('externalRequired', True) for code, rec in detailed.items()}
 
 
-def delete_subject_credit(code: str):
+def delete_subject_credit(code: str, college: str = ''):
     code = (code or '').strip().upper()
     if not code:
         return
     from firebase_init import get_db
     from firebase_admin import firestore
     db = get_db()
-    doc_ref = db.collection(COL_CONFIG).document(DOC_SUBJECT_CREDITS)
+    firestore_doc_name = f"{DOC_SUBJECT_CREDITS}_{college}" if college else DOC_SUBJECT_CREDITS
+    doc_ref = db.collection(COL_CONFIG).document(firestore_doc_name)
     doc_ref.update({f"values.{code}": firestore.DELETE_FIELD})
-    invalidate_cache()
+    invalidate_cache(college=college)
 
 
 # ── Subject Teachers ──────────────────────────────────────────────────────────
@@ -166,16 +208,20 @@ def _teacher_key(branch: str, semester: str, code: str) -> str:
     return f"{branch.strip().upper()}||{semester.strip().upper()}||{code.strip().upper()}"
 
 
-def get_subject_teachers_all() -> dict:
-    """Returns the raw {key: record} dict — for admin list UI."""
-    data = _get(DOC_SUBJECT_TEACHERS, {"values": {}})
+def get_subject_teachers_all(college: str = '') -> dict:
+    """Returns the raw {key: record} dict — for admin list UI.
+    college: the college slug from session.
+    """
+    data = _get(DOC_SUBJECT_TEACHERS, {"values": {}}, college=college)
     return data.get("values", {}) if "values" in data else data
 
 
-def get_teacher_map(branch: str, semester: str) -> dict:
+def get_teacher_map(branch: str, semester: str, college: str = '') -> dict:
     """Returns {subject_code: teacher_name} for a given branch+semester.
-    Used by the analysis API to annotate each subject row."""
-    all_teachers = get_subject_teachers_all()
+    Used by the analysis API to annotate each subject row.
+    college: the college slug from session.
+    """
+    all_teachers = get_subject_teachers_all(college=college)
     prefix = f"{branch.strip().upper()}||{semester.strip().upper()}||"
     result = {}
     for key, rec in all_teachers.items():
@@ -185,12 +231,16 @@ def get_teacher_map(branch: str, semester: str) -> dict:
     return result
 
 
-def upsert_subject_teacher(branch: str, semester: str, code: str, teacher: str):
+def upsert_subject_teacher(branch: str, semester: str, code: str, teacher: str,
+                            college: str = ''):
     """Admin adds/updates a subject teacher assignment.
-    Uses dot-path field-level merge so only this one key is touched."""
+    Uses dot-path field-level merge so only this one key is touched.
+    college: the college slug from session.
+    """
     key = _teacher_key(branch, semester, code)
     from firebase_init import get_db
-    get_db().collection(COL_CONFIG).document(DOC_SUBJECT_TEACHERS).set({
+    firestore_doc_name = f"{DOC_SUBJECT_TEACHERS}_{college}" if college else DOC_SUBJECT_TEACHERS
+    get_db().collection(COL_CONFIG).document(firestore_doc_name).set({
         "values": {
             key: {
                 'branch':   branch.strip(),
@@ -200,18 +250,21 @@ def upsert_subject_teacher(branch: str, semester: str, code: str, teacher: str):
             }
         }
     }, merge=True)
-    invalidate_cache()
+    invalidate_cache(college=college)
 
 
-def delete_subject_teacher(branch: str, semester: str, code: str):
-    """Admin removes a teacher assignment using a dot-path delete."""
+def delete_subject_teacher(branch: str, semester: str, code: str, college: str = ''):
+    """Admin removes a teacher assignment using a dot-path delete.
+    college: the college slug from session.
+    """
     key = _teacher_key(branch, semester, code)
     from firebase_init import get_db
     from firebase_admin import firestore
-    get_db().collection(COL_CONFIG).document(DOC_SUBJECT_TEACHERS).update({
+    firestore_doc_name = f"{DOC_SUBJECT_TEACHERS}_{college}" if college else DOC_SUBJECT_TEACHERS
+    get_db().collection(COL_CONFIG).document(firestore_doc_name).update({
         f"values.{key}": firestore.DELETE_FIELD
     })
-    invalidate_cache()
+    invalidate_cache(college=college)
 
 
 # ── Computed helpers (use these everywhere instead of raw thresholds) ─────────

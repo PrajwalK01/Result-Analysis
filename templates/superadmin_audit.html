@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SuperAdmin · Audit Log</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/user.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_subjects.css') }}">
+</head>
+<body>
+
+  <div class="bg-grid" aria-hidden="true"></div>
+  <div class="bg-blob bg-blob--1" aria-hidden="true"></div>
+  <div class="bg-blob bg-blob--2" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="topbar__brand">
+      <div style="width: 28px; height: 28px; border-radius: 50%; overflow: hidden; flex-shrink: 0;">
+        <img src="/static/img/image.png" alt="Logo" style="width: 100%; height: 100%; object-fit: contain;">
+      </div>
+      <div>
+        <div class="topbar__title">Result Analysis</div>
+        <div class="topbar__sub">SuperAdmin — Audit Log</div>
+      </div>
+    </div>
+    <div class="topbar__user">
+      <div class="avatar">{{ user_name[0] | upper if user_name else 'S' }}</div>
+      <span class="topbar__username">{{ user_name }}</span>
+      <a href="{{ url_for('login.user_page') }}" class="btn btn--admin">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+          <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+        </svg>
+        Dashboard
+      </a>
+      <a href="{{ url_for('login.logout') }}" class="btn btn--logout">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+          <polyline points="16 17 21 12 16 7"/>
+          <line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+        Logout
+      </a>
+    </div>
+  </header>
+
+  <!-- Admin nav tabs -->
+  <nav class="tabs">
+    <a href="{{ url_for('admin.admin_subjects_page') }}" class="tab">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/>
+      </svg>
+      Subject Credits
+    </a>
+    <a href="{{ url_for('admin.admin_teachers_page') }}" class="tab">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+        <circle cx="9" cy="7" r="4"/>
+        <path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
+      </svg>
+      Subject Teachers
+    </a>
+    <a href="{{ url_for('admin.admin_users_page') }}" class="tab">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+        <circle cx="8.5" cy="7" r="4"/>
+        <line x1="20" y1="8" x2="20" y2="14"/>
+        <line x1="23" y1="11" x2="17" y2="11"/>
+      </svg>
+      Manage Users
+    </a>
+    <a href="{{ url_for('admin.admin_audit_page') }}" class="tab tab--active">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="16" y1="13" x2="8" y2="13"/>
+        <line x1="16" y1="17" x2="8" y2="17"/>
+        <polyline points="10 9 9 9 8 9"/>
+      </svg>
+      Audit Log
+    </a>
+  </nav>
+
+  <main class="content">
+    <section class="panel">
+
+      <div class="admin-panel-header">
+        <div>
+          <h2 class="section-title">Audit Log</h2>
+          <p class="section-desc">
+            All actions performed by users in your college — logins, saves, edits, and deletions.
+            Hard-delete is available next to any <strong>SoftDeleteResult</strong> entry.
+          </p>
+        </div>
+        <button id="refreshLogsBtn" class="btn btn--secondary btn--sm">↻ Refresh</button>
+      </div>
+
+      <div class="admin-toolbar">
+        <div class="field admin-search">
+          <input id="auditSearch" placeholder="🔍  Filter by action, user, or USN…">
+        </div>
+        <div class="field">
+          <select id="filterAction">
+            <option value="">All Actions</option>
+            <option value="SaveResult">SaveResult</option>
+            <option value="SoftDeleteResult">SoftDeleteResult</option>
+            <option value="HardDeleteResult">HardDeleteResult</option>
+            <option value="CreateUser">CreateUser</option>
+          </select>
+        </div>
+        <span id="auditCount" class="admin-count"></span>
+      </div>
+
+      <div id="auditMsg" class="message hidden"></div>
+
+      <div class="table-wrap">
+        <table class="data-table" id="auditTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Action</th>
+              <th>Target</th>
+              <th>Actor</th>
+              <th>Role</th>
+              <th>Details</th>
+              <th>Timestamp</th>
+              <th>Hard Delete</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td colspan="8" class="table-empty">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+    </section>
+  </main>
+
+  <script>
+  /* ── Audit Log — SuperAdmin View ── */
+  let allLogs = [];
+
+  document.addEventListener('DOMContentLoaded', () => {
+    loadLogs();
+    document.getElementById('refreshLogsBtn').addEventListener('click', loadLogs);
+    document.getElementById('auditSearch').addEventListener('input', renderTable);
+    document.getElementById('filterAction').addEventListener('change', renderTable);
+  });
+
+  async function loadLogs() {
+    const tbody = document.querySelector('#auditTable tbody');
+    tbody.innerHTML = '<tr><td colspan="8" class="table-empty">Loading…</td></tr>';
+    try {
+      const res  = await fetch('/api/admin/audit-logs');
+      const data = await res.json();
+      if (!data.success) {
+        tbody.innerHTML = `<tr><td colspan="8" class="table-empty" style="color:var(--danger)">${data.error}</td></tr>`;
+        return;
+      }
+      allLogs = data.logs || [];
+      renderTable();
+    } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="8" class="table-empty" style="color:var(--danger)">Network error: ${e.message}</td></tr>`;
+    }
+  }
+
+  function renderTable() {
+    const q      = document.getElementById('auditSearch').value.trim().toLowerCase();
+    const action = document.getElementById('filterAction').value;
+    const tbody  = document.querySelector('#auditTable tbody');
+    const countEl = document.getElementById('auditCount');
+
+    const filtered = allLogs.filter(l => {
+      if (action && l.Action !== action) return false;
+      const haystack = [
+        l.Action, l.TargetId, l.ActorUserName, l.ActorRole,
+        JSON.stringify(l.Details || {})
+      ].join(' ').toLowerCase();
+      return haystack.includes(q);
+    });
+
+    countEl.textContent = `${filtered.length} entr${filtered.length !== 1 ? 'ies' : 'y'}`;
+    tbody.innerHTML = '';
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8" class="table-empty">No entries match.</td></tr>`;
+      return;
+    }
+
+    filtered.forEach((l, i) => {
+      const isSoftDelete = l.Action === 'SoftDeleteResult';
+      const details = l.Details || {};
+      const detailStr = Object.entries(details)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(', ');
+
+      const ts = l.createdAt
+        ? (typeof l.createdAt === 'string'
+            ? l.createdAt.substring(0, 19).replace('T', ' ')
+            : String(l.createdAt))
+        : '—';
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="col-num">${i + 1}</td>
+        <td><span class="badge ${badgeClass(l.Action)}">${l.Action}</span></td>
+        <td style="font-family:monospace;font-size:11px;">${l.TargetId || '—'}</td>
+        <td style="font-weight:600;">${l.ActorUserName || '—'}</td>
+        <td><span class="badge badge--na">${l.ActorRole || '—'}</span></td>
+        <td style="font-size:11px;color:var(--muted);max-width:260px;word-break:break-word;">${detailStr || '—'}</td>
+        <td style="font-size:11px;white-space:nowrap;">${ts}</td>
+        <td>
+          ${isSoftDelete
+            ? `<button class="btn btn--danger btn--sm hard-del-btn"
+                 data-branch="${details.branch || ''}"
+                 data-semester="${details.semester || ''}"
+                 data-year="${details.academicYear || ''}"
+                 data-usn="${details.usn || ''}"
+                 title="Permanently delete this result">
+                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                   <polyline points="3 6 5 6 21 6"/>
+                   <path d="M19 6l-1 14H6L5 6"/>
+                   <path d="M10 11v6"/><path d="M14 11v6"/>
+                   <path d="M9 6V4h6v2"/>
+                 </svg>
+                 Hard Delete
+               </button>`
+            : '—'}
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    tbody.querySelectorAll('.hard-del-btn').forEach(btn =>
+      btn.addEventListener('click', () => hardDelete(
+        btn.dataset.branch,
+        btn.dataset.semester,
+        btn.dataset.year,
+        btn.dataset.usn,
+        btn
+      ))
+    );
+  }
+
+  function badgeClass(action) {
+    if (action === 'SaveResult')        return 'badge--pass';
+    if (action === 'SoftDeleteResult')  return 'badge--absent';
+    if (action === 'HardDeleteResult')  return 'badge--fail';
+    return 'badge--na';
+  }
+
+  async function hardDelete(branch, semester, academicYear, usn, btn) {
+    if (!usn || !branch) { alert('Missing result details.'); return; }
+    if (!confirm(
+      `PERMANENTLY delete result for ${usn}?\n` +
+      `Branch: ${branch} | Semester: ${semester} | Year: ${academicYear}\n\n` +
+      `This cannot be undone. The audit trail for this deletion will be preserved.`
+    )) return;
+
+    const msgEl = document.getElementById('auditMsg');
+    btn.disabled = true;
+    btn.textContent = 'Deleting…';
+
+    try {
+      const res  = await fetch('/api/admin/results/hard-delete', {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ branch, semester, academicYear, usn }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        msgEl.textContent = `✓ ${data.message}`;
+        msgEl.className   = 'message message--ok';
+        loadLogs();   // refresh so the SoftDelete entry is replaced by HardDelete
+      } else {
+        msgEl.textContent = `Error: ${data.error}`;
+        msgEl.className   = 'message message--err';
+        btn.disabled = false;
+        btn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="3 6 5 6 21 6"/>
+          <path d="M19 6l-1 14H6L5 6"/>
+          <path d="M10 11v6"/><path d="M14 11v6"/>
+          <path d="M9 6V4h6v2"/>
+        </svg> Hard Delete`;
+      }
+    } catch (e) {
+      msgEl.textContent = `Network error: ${e.message}`;
+      msgEl.className   = 'message message--err';
+      btn.disabled = false;
+    }
+  }
+  </script>
+</body>
+</html>

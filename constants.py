@@ -10,6 +10,12 @@ COL_LOOKUPS     = "lookups"
 COL_CONFIG      = "config"
 COL_AUDIT_LOGS  = "AuditLogs"
 
+# ── Multi-tenant collections / fields ────────────────────────────────────────
+COL_COLLEGES        = "Colleges"          # top-level; doc ID = college code (slug)
+FIELD_COLLEGE       = "College"           # college CODE (slug) stored on every user/audit doc
+FIELD_COLLEGE_NAME  = "CollegeName"       # human-readable, Colleges collection only
+FIELD_COLLEGE_STATUS = "Status"           # "Active" / "Suspended"
+
 # ── Firestore document names inside COL_LOOKUPS ───────────────────────────────
 DOC_BRANCHES        = "branches"
 DOC_SEMESTERS       = "semesters"
@@ -42,8 +48,9 @@ FIELD_DELETED_BY = "deletedBy"
 FIELD_SAVED_BY   = "savedBy"
 
 # ── Roles ─────────────────────────────────────────────────────────────────────
-ROLE_ADMIN = "Admin"
-ROLE_SUPER_ADMIN = "SuperAdmin"
+ROLE_CREATOR         = "Creator"
+ROLE_ADMIN           = "Admin"
+ROLE_SUPER_ADMIN     = "SuperAdmin"
 ROLE_RESULT_ANALYSIS = "ResultAnalysis"
 
 # ── Results document field names ─────────────────────────────────────────────
